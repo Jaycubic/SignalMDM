@@ -1,0 +1,48 @@
+"""
+core/config.py
+--------------
+Centralised application settings loaded from the .env file.
+Import `settings` anywhere in the codebase to access typed config values.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    # Database
+    database_url: str = Field(
+        default="postgresql://postgres:2025@localhost:5432/SignalMDM",
+        env="DATABASE_URL",
+    )
+
+    # Security
+    jwt_secret: str = Field(default="supersecretkey", env="JWT_SECRET")
+
+    # Celery / Redis
+    redis_url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
+
+    # App
+    app_env: str = Field(default="development", env="APP_ENV")
+    upload_dir: str = Field(default="storage/uploads", env="UPLOAD_DIR")
+    app_title: str = "SignalMDM API"
+    app_version: str = "1.0.0"
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = False
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    """Cached settings singleton — safe to call anywhere."""
+    return Settings()
+
+
+# Convenience singleton
+settings = get_settings()
