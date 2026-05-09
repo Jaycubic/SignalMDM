@@ -6,7 +6,12 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-
+__pycache__/
+*.pyc
+desktop.ini
+.env
+venv/
+.storage/
 # Dependencies
 node_modules
 .pnp
