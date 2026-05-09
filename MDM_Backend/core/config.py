@@ -22,6 +22,13 @@ class Settings(BaseSettings):
 
     # Security
     jwt_secret: str = Field(default="supersecretkey", env="JWT_SECRET")
+    jwt_algorithm: str = Field(default="HS256", env="JWT_ALGORITHM")
+    jwt_expire_minutes: int = Field(default=1440, env="JWT_EXPIRE_MINUTES")
+    token_encryption_key: str = Field(
+        default="",
+        env="TOKEN_ENCRYPTION_KEY",
+        description="64 hex chars = 32 bytes AES-256 key. Generate: python -c 'import secrets; print(secrets.token_hex(32))'",
+    )
 
     # Celery / Redis
     redis_url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")

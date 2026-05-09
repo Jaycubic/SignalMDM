@@ -8,7 +8,9 @@ Flow:
   2. POST /ingestion/{run_id}/upload    → upload file → trigger async raw worker
   3. GET  /ingestion/{run_id}/status    → poll state + counts
 
-Multi-tenancy: all endpoints require X-Tenant-ID header.
+Security:
+  All endpoints require a valid encrypted JWT (via require_auth).
+  tenant_id is extracted from the verified JWT payload.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ import os
 import uuid
 import csv
 
-from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.orm import Session
 
 from signalmdm.database import get_db
@@ -33,23 +35,12 @@ from signalmdm.services.ingestion_service import ingestion_service
 from signalmdm.services.raw_service import raw_service
 from signalmdm.services.staging_service import staging_service
 from signalmdm.enums import IngestionStateEnum
+from signalmdm.middleware.auth import TokenPayload, require_auth
 from core.config import settings
 
 router = APIRouter(prefix="/ingestion", tags=["Ingestion"])
 
-# Supported MIME types / extensions
-_ALLOWED_TYPES = {"text/csv", "application/json", "application/octet-stream"}
 _MAX_FILE_MB = 50
-
-
-def _resolve_tenant(x_tenant_id: str = Header(..., alias="X-Tenant-ID")) -> uuid.UUID:
-    try:
-        return uuid.UUID(x_tenant_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="X-Tenant-ID must be a valid UUID.",
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -64,14 +55,18 @@ def _resolve_tenant(x_tenant_id: str = Header(..., alias="X-Tenant-ID")) -> uuid
 def start_ingestion(
     body: IngestionRunCreate,
     db: Session = Depends(get_db),
-    tenant_id: uuid.UUID = Depends(_resolve_tenant),
+    auth: TokenPayload = Depends(require_auth),
 ):
     """
     Create a new IngestionRun in **CREATED** state.
-
     Returns the `run_id` UUID — use it for subsequent upload and status calls.
     """
-    run = ingestion_service.create_run(db, tenant_id=tenant_id, data=body)
+    run = ingestion_service.create_run(
+        db,
+        tenant_id=auth.tenant_id,
+        data=body,
+        performed_by=auth.user_id,
+    )
     return ok(
         data=IngestionRunRead.model_validate(run).model_dump(),
         message="Ingestion run created. Use the run_id to upload files.",
@@ -90,7 +85,7 @@ def upload_file(
     run_id: uuid.UUID,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    tenant_id: uuid.UUID = Depends(_resolve_tenant),
+    auth: TokenPayload = Depends(require_auth),
 ):
     """
     Upload a data file (CSV or JSON) to an existing ingestion run.
@@ -101,6 +96,8 @@ def upload_file(
     3. Transition run → RAW_LOADED
     4. Chain staging worker → STAGING_CREATED → COMPLETED
     """
+    tenant_id = auth.tenant_id
+
     # Verify run exists and is in an acceptable state
     run = ingestion_service.get_run(db, tenant_id=tenant_id, run_id=run_id)
     if run.state not in (IngestionStateEnum.CREATED, IngestionStateEnum.RUNNING):
@@ -122,7 +119,7 @@ def upload_file(
     upload_dir = os.path.join(os.getcwd(), settings.upload_dir, str(run_id))
     os.makedirs(upload_dir, exist_ok=True)
 
-    # Save file to disk
+    # Save file to disk (UUID-prefixed to avoid collisions)
     safe_filename = f"{uuid.uuid4()}_{file.filename}"
     stored_path = os.path.join(upload_dir, safe_filename)
     with open(stored_path, "wb") as f:
@@ -146,6 +143,7 @@ def upload_file(
         tenant_id=tenant_id,
         new_state=IngestionStateEnum.RUNNING,
         file_count=run.file_count + 1,
+        performed_by=auth.user_id,
     )
 
     # Trigger async Celery worker
@@ -157,8 +155,7 @@ def upload_file(
             str(tenant_id),
         )
         async_triggered = True
-    except Exception as celery_err:
-        # If Celery/Redis is unavailable, fall back to synchronous processing
+    except Exception:
         async_triggered = False
         _process_synchronously(db, run_id, file_upload.file_id, tenant_id, file_bytes, file.filename or "upload")
 
@@ -170,7 +167,8 @@ def upload_file(
             "size_bytes": len(file_bytes),
             "async_processing": async_triggered,
         },
-        message="File uploaded. Processing started." if async_triggered else "File uploaded. Processed synchronously (Celery unavailable).",
+        message="File uploaded. Processing started." if async_triggered
+                else "File uploaded. Processed synchronously (Celery unavailable).",
     )
 
 
@@ -182,61 +180,31 @@ def _process_synchronously(
     file_bytes: bytes,
     filename: str,
 ) -> None:
-    """
-    Synchronous fallback when Celery is not available.
-    Parses the file, inserts raw records, then creates staging entities.
-    """
     from signalmdm.models.ingestion_run import IngestionRun
     run = db.query(IngestionRun).filter(IngestionRun.run_id == run_id).first()
     if not run:
         return
-
     rows = _parse_file(file_bytes, filename)
-
     record_count = raw_service.bulk_insert_raw_records(
-        db,
-        tenant_id=tenant_id,
-        run_id=run_id,
-        source_system_id=run.source_system_id,
-        file_id=file_id,
-        rows=rows,
+        db, tenant_id=tenant_id, run_id=run_id,
+        source_system_id=run.source_system_id, file_id=file_id, rows=rows,
     )
-
-    ingestion_service.transition_state(
-        db, run_id=run_id, tenant_id=tenant_id,
-        new_state=IngestionStateEnum.RAW_LOADED,
-        record_count=record_count,
-    )
-
-    staging_count = staging_service.create_staging_from_run(
-        db,
-        run_id=run_id,
-        tenant_id=tenant_id,
-        source_system_id=run.source_system_id,
-    )
-
-    ingestion_service.transition_state(
-        db, run_id=run_id, tenant_id=tenant_id,
-        new_state=IngestionStateEnum.STAGING_CREATED,
-    )
-
-    ingestion_service.transition_state(
-        db, run_id=run_id, tenant_id=tenant_id,
-        new_state=IngestionStateEnum.COMPLETED,
-    )
+    ingestion_service.transition_state(db, run_id=run_id, tenant_id=tenant_id,
+        new_state=IngestionStateEnum.RAW_LOADED, record_count=record_count)
+    staging_service.create_staging_from_run(
+        db, run_id=run_id, tenant_id=tenant_id, source_system_id=run.source_system_id)
+    ingestion_service.transition_state(db, run_id=run_id, tenant_id=tenant_id,
+        new_state=IngestionStateEnum.STAGING_CREATED)
+    ingestion_service.transition_state(db, run_id=run_id, tenant_id=tenant_id,
+        new_state=IngestionStateEnum.COMPLETED)
 
 
 def _parse_file(file_bytes: bytes, filename: str) -> list[dict]:
-    """Parse CSV or JSON bytes into a list of row dicts."""
-    name_lower = filename.lower()
-    if name_lower.endswith(".json"):
+    if filename.lower().endswith(".json"):
         data = json.loads(file_bytes.decode("utf-8"))
         return data if isinstance(data, list) else [data]
-    else:
-        # Default: treat as CSV
-        text = file_bytes.decode("utf-8")
-        reader = csv.DictReader(io.StringIO(text))
-        return [dict(row) for row in reader]
+    text = file_bytes.decode("utf-8")
+    return [dict(row) for row in csv.DictReader(io.StringIO(text))]
 
 
 # ---------------------------------------------------------------------------
@@ -250,16 +218,12 @@ def _parse_file(file_bytes: bytes, filename: str) -> list[dict]:
 def get_status(
     run_id: uuid.UUID,
     db: Session = Depends(get_db),
-    tenant_id: uuid.UUID = Depends(_resolve_tenant),
+    auth: TokenPayload = Depends(require_auth),
 ):
-    """
-    Poll the current state of an ingestion run.
-
-    Returns state, file_count, record_count, and staging_count.
-    """
-    run = ingestion_service.get_run(db, tenant_id=tenant_id, run_id=run_id)
-    staging_count = staging_service.count_staging_for_run(db, run_id=run_id, tenant_id=tenant_id)
-
+    """Poll the current state of an ingestion run."""
+    run = ingestion_service.get_run(db, tenant_id=auth.tenant_id, run_id=run_id)
+    staging_count = staging_service.count_staging_for_run(
+        db, run_id=run_id, tenant_id=auth.tenant_id)
     return ok(
         data=IngestionStatusRead(
             run_id=run.run_id,
@@ -277,23 +241,21 @@ def get_status(
 
 @router.get(
     "/",
-    summary="List all ingestion runs for a tenant",
+    summary="List all ingestion runs for the authenticated tenant",
 )
 def list_runs(
     skip: int = 0,
     limit: int = 20,
     db: Session = Depends(get_db),
-    tenant_id: uuid.UUID = Depends(_resolve_tenant),
+    auth: TokenPayload = Depends(require_auth),
 ):
     """List recent ingestion runs for the tenant, newest first."""
     from signalmdm.models.ingestion_run import IngestionRun
     runs = (
         db.query(IngestionRun)
-        .filter(IngestionRun.tenant_id == tenant_id)
+        .filter(IngestionRun.tenant_id == auth.tenant_id)
         .order_by(IngestionRun.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
+        .offset(skip).limit(limit).all()
     )
     return ok(
         data=[IngestionRunRead.model_validate(r).model_dump() for r in runs],

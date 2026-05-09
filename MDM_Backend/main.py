@@ -3,11 +3,9 @@ main.py
 --------
 SignalMDM Phase 1 — FastAPI Application Entrypoint
 
-Startup sequence:
-  1. Load environment variables
-  2. Create all DB tables (DDL auto-create)
-  3. Mount Phase 1 routers
-  4. Expose root health-check
+Security layers:
+  1. SecurityHeadersMiddleware — sets strict HTTP security headers on every response
+  2. require_auth (FastAPI dependency) — AES decrypt → Redis check → JWT verify → fingerprint
 
 Run:
     uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -15,14 +13,15 @@ Run:
 
 from __future__ import annotations
 
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from dotenv import load_dotenv
-
 load_dotenv()
 
 # ---------------------------------------------------------------------------
@@ -42,16 +41,58 @@ from signalmdm.routers.ingestion_router import router as ingestion_router
 
 
 # ---------------------------------------------------------------------------
-# Lifespan — runs on startup / shutdown
+# Security Headers Middleware
+# ---------------------------------------------------------------------------
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    Adds strict HTTP security headers to every response.
+
+    These headers are the first line of defence at the HTTP layer and
+    are independent of the JWT / AES auth flow.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        start = time.monotonic()
+        response = await call_next(request)
+        elapsed = round((time.monotonic() - start) * 1000, 2)
+
+        # Prevent browsers from MIME-sniffing
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        # Stop clickjacking
+        response.headers["X-Frame-Options"] = "DENY"
+        # Force HTTPS for 1 year (enable in production behind TLS terminator)
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        # Minimal referrer leakage
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        # Restrict browser features
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        # Basic XSS protection (legacy browsers)
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        # Remove server fingerprint
+        response.headers["Server"] = "SignalMDM"
+        # Timing info (useful for monitoring)
+        response.headers["X-Response-Time"] = f"{elapsed}ms"
+
+        return response
+
+
+# ---------------------------------------------------------------------------
+# Lifespan — startup / shutdown
 # ---------------------------------------------------------------------------
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: create all tables if they don't exist
+    # Startup
     Base.metadata.create_all(bind=engine)
     print("[SignalMDM] Database tables verified / created.")
+
+    # Warm Redis connection pool (non-blocking — errors are logged, not raised)
+    from core.redis_client import is_redis_available
+    redis_ok = is_redis_available()
+    print(f"[SignalMDM] Redis available: {redis_ok}")
+
     yield
-    # Shutdown (nothing to clean up for now)
     print("[SignalMDM] Shutting down.")
 
 
@@ -64,7 +105,10 @@ app = FastAPI(
     version=settings.app_version,
     description=(
         "SignalMDM Phase 1 API — Source registration, ingestion pipeline, "
-        "raw data storage, and staging entity creation."
+        "raw data storage, and staging entity creation.\n\n"
+        "**Authentication:** All protected endpoints require:\n"
+        "- `Authorization: Bearer <AES-256-CBC encrypted JWT>`\n"
+        "- `X-Device-ID: <stable device fingerprint>`"
     ),
     lifespan=lifespan,
     docs_url="/docs",
@@ -72,19 +116,27 @@ app = FastAPI(
 )
 
 # ---------------------------------------------------------------------------
-# CORS
+# Middleware — order matters: outermost first
 # ---------------------------------------------------------------------------
 
+# 1. Security headers (applied to ALL responses)
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 2. CORS (before security headers so preflight OPTIONS also gets headers)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:5173",   # Vite dev server
+        "http://localhost:3000",   # Next.js dev server
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Response-Time"],
 )
 
 # ---------------------------------------------------------------------------
-# Global exception handler — ensures StandardResponse format on unhandled errors
+# Global exception handler — uniform StandardResponse on unhandled errors
 # ---------------------------------------------------------------------------
 
 @app.exception_handler(Exception)
@@ -93,11 +145,12 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={
             "success": False,
-            "message": "An unexpected error occurred.",
+            "message": "An unexpected server error occurred.",
             "data": None,
             "errors": [str(exc)],
         },
     )
+
 
 # ---------------------------------------------------------------------------
 # Routers
@@ -109,8 +162,9 @@ app.include_router(tenant_router,    prefix=PREFIX)
 app.include_router(source_router,    prefix=PREFIX)
 app.include_router(ingestion_router, prefix=PREFIX)
 
+
 # ---------------------------------------------------------------------------
-# Health check
+# Health / root endpoints  (no auth required)
 # ---------------------------------------------------------------------------
 
 @app.get("/", tags=["Health"])
@@ -126,5 +180,9 @@ def root():
 
 @app.get("/health", tags=["Health"])
 def health():
-    """Kubernetes / load balancer health probe."""
-    return {"status": "ok"}
+    """Kubernetes / load-balancer liveness probe."""
+    from core.redis_client import is_redis_available
+    return {
+        "status": "ok",
+        "redis": "connected" if is_redis_available() else "unavailable",
+    }

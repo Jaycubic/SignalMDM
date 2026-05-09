@@ -20,7 +20,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Use centralized Redis URL — single source of truth
 REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+# Note: Celery manages its own connections via kombu/amqp.
+# The core.redis_client pool is used by the auth middleware + app code only.
 
 celery = Celery(
     "signalmdm_worker",

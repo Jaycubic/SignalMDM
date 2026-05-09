@@ -1,0 +1,202 @@
+"""
+signalmdm/middleware/auth.py
+------------------------------
+FastAPI security dependency — mirrors the JS auth.js middleware exactly.
+
+Flow (per request):
+    1. Extract  Authorization: Bearer <AES-encrypted-JWT>
+    2. AES-256-CBC decrypt  → raw JWT string
+    3. Check Redis blacklist → 401 if revoked
+    4. jose.jwt.decode       → 401 if expired / bad signature
+    5. Recompute fingerprint SHA256(deviceId|userAgent|userId)
+                             → 401 if mismatch
+    6. Return TokenPayload   → available as Depends(require_auth)
+
+Role guard:
+    Use Depends(require_admin) to restrict an endpoint to role="admin".
+
+Usage in a router:
+    from signalmdm.middleware.auth import require_auth, require_admin, TokenPayload
+
+    @router.get("/secure")
+    def secure_endpoint(auth: TokenPayload = Depends(require_auth)):
+        return {"tenant": auth.tenant_id}
+
+    @router.delete("/admin-only")
+    def admin_endpoint(auth: TokenPayload = Depends(require_admin)):
+        ...
+"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from typing import Optional
+
+from fastapi import Depends, Header, HTTPException, Request, status
+from jose import JWTError
+from pydantic import BaseModel
+
+from signalmdm.middleware.token_utils import (
+    aes_decrypt,
+    compute_fingerprint,
+    decode_token,
+    is_token_revoked,
+)
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Token payload model
+# ---------------------------------------------------------------------------
+
+class TokenPayload(BaseModel):
+    """Decoded, validated JWT payload — injected via Depends(require_auth)."""
+
+    user_id:   str
+    tenant_id: uuid.UUID
+    role:      str
+    fp_hash:   str
+    raw_jwt:   str   # kept for revocation (logout endpoint)
+
+    model_config = {"arbitrary_types_allowed": True}
+
+
+# ---------------------------------------------------------------------------
+# Core auth dependency
+# ---------------------------------------------------------------------------
+
+async def require_auth(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    x_device_id: Optional[str]   = Header(None, alias="X-Device-ID"),
+) -> TokenPayload:
+    """
+    Validate the encrypted JWT on every protected request.
+
+    Headers expected from the frontend:
+        Authorization: Bearer <base64(IV + AES_CBC_ciphertext_of_JWT)>
+        X-Device-ID:   <stable device fingerprint string>
+        User-Agent:    <browser/app user-agent>   (standard header)
+
+    Raises HTTP 401 for any security violation.
+    """
+    credentials_exc = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    # --- 1. Extract encrypted token from Authorization header ---------------
+    if not authorization or not authorization.startswith("Bearer "):
+        logger.warning("[auth] Missing or malformed Authorization header.")
+        raise credentials_exc
+
+    encrypted_token = authorization.split(" ", 1)[1].strip()
+    if not encrypted_token:
+        raise credentials_exc
+
+    # --- 2. AES-256-CBC decrypt → raw JWT -----------------------------------
+    try:
+        raw_jwt = aes_decrypt(encrypted_token)
+    except ValueError:
+        logger.warning("[auth] Token decryption failed.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token encryption.",
+        )
+
+    # --- 3. Redis revocation check ------------------------------------------
+    if is_token_revoked(raw_jwt):
+        logger.warning("[auth] Revoked token presented.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked.",
+        )
+
+    # --- 4. JWT signature + expiry verification -----------------------------
+    try:
+        payload = decode_token(raw_jwt)
+    except JWTError as exc:
+        logger.warning("[auth] JWT verification failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token.",
+        )
+
+    user_id   = payload.get("sub")
+    tenant_id = payload.get("tenant_id")
+    role      = payload.get("role", "viewer")
+    fp_hash   = payload.get("fpHash", "")
+
+    if not user_id or not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Malformed token payload.",
+        )
+
+    # --- 5. Device fingerprint validation -----------------------------------
+    device_id  = x_device_id or request.headers.get("X-Device-ID") or "unknown"
+    user_agent = request.headers.get("user-agent") or ""
+
+    expected_fp = compute_fingerprint(device_id, user_agent, user_id)
+    if expected_fp != fp_hash:
+        logger.warning(
+            "[auth] Fingerprint mismatch. user=%s device=%s", user_id, device_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid device fingerprint.",
+        )
+
+    # --- 6. Attach to request state + return --------------------------------
+    token_payload = TokenPayload(
+        user_id=user_id,
+        tenant_id=uuid.UUID(tenant_id),
+        role=role,
+        fp_hash=fp_hash,
+        raw_jwt=raw_jwt,
+    )
+    request.state.user = token_payload
+    return token_payload
+
+
+# ---------------------------------------------------------------------------
+# Role-based guards
+# ---------------------------------------------------------------------------
+
+def require_admin(auth: TokenPayload = Depends(require_auth)) -> TokenPayload:
+    """
+    Extends require_auth — additionally enforces role == "admin".
+
+    Usage:
+        @router.delete("/sources/{id}")
+        def delete_source(auth: TokenPayload = Depends(require_admin)):
+            ...
+    """
+    if auth.role != "admin":
+        logger.warning("[auth] Admin access denied for user=%s role=%s", auth.user_id, auth.role)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required.",
+        )
+    return auth
+
+
+def require_role(*roles: str):
+    """
+    Flexible role guard — accepts any of the given roles.
+
+    Usage:
+        @router.post("/ingestion/start")
+        def start(auth: TokenPayload = Depends(require_role("admin", "ingestion_manager"))):
+            ...
+    """
+    def _check(auth: TokenPayload = Depends(require_auth)) -> TokenPayload:
+        if auth.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Required roles: {list(roles)}. Your role: {auth.role}",
+            )
+        return auth
+    return _check
