@@ -1,3 +1,4 @@
+//Ingestion runs
 import { useState, useEffect, useRef } from "react";
 
 const CSS = `
@@ -227,20 +228,69 @@ if (typeof document !== "undefined" && !document.getElementById("ir-styles")) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   TYPES
+═══════════════════════════════════════════════════════════════ */
+type RunStatus = "CREATED" | "RUNNING" | "RAW_LOADED" | "STAGING_CREATED" | "FAILED" | "COMPLETED";
+type TriggerType = "MANUAL" | "SCHEDULED" | "API" | "EVENT";
+type RunType = "INITIAL_LOAD" | "DELTA_LOAD" | "REPROCESS" | "TEST_LOAD";
+type EntityType = "CUSTOMER" | "SUPPLIER" | "PRODUCT" | "ACCOUNT" | "ASSET" | "LOCATION";
+
+interface IngestionRun {
+    id: string;
+    source: string;
+    entity: EntityType;
+    runType: RunType;
+    triggerType: TriggerType;
+    status: RunStatus;
+    totalRecords: number;
+    loadedRecords: number;
+    failedRecords: number;
+    startedAt: string;
+    completedAt: string | null;
+}
+
+interface TimelineItem {
+    label: string;
+    ts: string;
+    done?: boolean;
+    active?: boolean;
+    fail?: boolean;
+}
+
+interface RunError {
+    code: string;
+    msg: string;
+}
+
+interface StartIngestionData {
+    source: string;
+    entity: EntityType;
+    runType: RunType;
+    triggerType: TriggerType;
+}
+
+interface ModalErrors {
+    source?: string;
+    entity?: string;
+    runType?: string;
+    triggerType?: string;
+}
+
+/* ═══════════════════════════════════════════════════════════════
    CONSTANTS
 ═══════════════════════════════════════════════════════════════ */
-const STATUSES = ["CREATED", "RUNNING", "RAW_LOADED", "STAGING_CREATED", "FAILED", "COMPLETED"];
+const STATUSES: RunStatus[] = ["CREATED", "RUNNING", "RAW_LOADED", "STAGING_CREATED", "FAILED", "COMPLETED"];
 
-const STATUS_LABEL = {
+const STATUS_LABEL: Record<RunStatus, string> = {
     CREATED: "Created", RUNNING: "Running", RAW_LOADED: "Raw Loaded",
     STAGING_CREATED: "Staging Created", FAILED: "Failed", COMPLETED: "Completed",
 };
 
-const MOCK_SOURCES = [
+const MOCK_SOURCES: string[] = [
     "Salesforce CRM", "SAP ERP Core", "Workday HRMS", "Oracle Finance", "Vendor Portal", "Legacy Master DB",
 ];
 
-const MOCK_RUNS = [
+const MOCK_RUNS: IngestionRun[] = [
     { id: "RUN-0042", source: "Salesforce CRM", entity: "CUSTOMER", runType: "DELTA_LOAD", triggerType: "SCHEDULED", status: "COMPLETED", totalRecords: 12400, loadedRecords: 12388, failedRecords: 12, startedAt: "2026-05-11 10:00", completedAt: "2026-05-11 10:14" },
     { id: "RUN-0041", source: "SAP ERP Core", entity: "PRODUCT", runType: "INITIAL_LOAD", triggerType: "MANUAL", status: "RUNNING", totalRecords: 88200, loadedRecords: 43100, failedRecords: 0, startedAt: "2026-05-11 09:45", completedAt: null },
     { id: "RUN-0040", source: "Oracle Finance", entity: "ACCOUNT", runType: "DELTA_LOAD", triggerType: "API", status: "STAGING_CREATED", totalRecords: 3100, loadedRecords: 3100, failedRecords: 0, startedAt: "2026-05-11 08:30", completedAt: "2026-05-11 08:47" },
@@ -251,7 +301,7 @@ const MOCK_RUNS = [
     { id: "RUN-0035", source: "SAP ERP Core", entity: "ASSET", runType: "DELTA_LOAD", triggerType: "SCHEDULED", status: "CREATED", totalRecords: 0, loadedRecords: 0, failedRecords: 0, startedAt: "2026-05-10 08:00", completedAt: null },
 ];
 
-const RUN_TIMELINES = {
+const RUN_TIMELINES: Record<RunStatus, TimelineItem[]> = {
     COMPLETED: [{ label: "Run Created", ts: "10:00 AM", done: true }, { label: "Raw Upload Started", ts: "10:01 AM", done: true }, { label: "Raw Upload Completed", ts: "10:03 AM", done: true }, { label: "Staging Creation Started", ts: "10:05 AM", done: true }, { label: "Staging Creation Completed", ts: "10:12 AM", done: true }, { label: "Run Completed", ts: "10:14 AM", done: true }],
     RUNNING: [{ label: "Run Created", ts: "09:45 AM", done: true }, { label: "Raw Upload Started", ts: "09:46 AM", done: true }, { label: "Processing Records…", ts: "In progress", active: true }],
     RAW_LOADED: [{ label: "Run Created", ts: "08:00 AM", done: true }, { label: "Raw Upload Started", ts: "08:01 AM", done: true }, { label: "Raw Upload Completed", ts: "08:05 AM", done: true }, { label: "Awaiting Staging", ts: "Pending", active: false }],
@@ -260,7 +310,7 @@ const RUN_TIMELINES = {
     CREATED: [{ label: "Run Queued", ts: "08:00 AM", done: false }],
 };
 
-const RUN_ERRORS = {
+const RUN_ERRORS: Partial<Record<RunStatus, RunError[]>> = {
     FAILED: [
         { code: "ERR_FIELD_MISSING", msg: "Required field 'email' missing in 610 records" },
         { code: "ERR_ENCODING", msg: "Unsupported character encoding in 3 records" },
@@ -268,7 +318,7 @@ const RUN_ERRORS = {
 };
 
 /* ─── Sub-components ────────────────────────────────────────── */
-function StatusBadge({ status }) {
+function StatusBadge({ status }: { status: RunStatus }): JSX.Element {
     return (
         <span className={`ir-status ir-status--${status}`}>
             {STATUS_LABEL[status] || status}
@@ -276,7 +326,12 @@ function StatusBadge({ status }) {
     );
 }
 
-function ProgressBar({ loaded, total }) {
+interface ProgressBarProps {
+    loaded: number;
+    total: number;
+}
+
+function ProgressBar({ loaded, total }: ProgressBarProps): JSX.Element {
     const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
     return (
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 100 }}>
@@ -291,26 +346,36 @@ function ProgressBar({ loaded, total }) {
 /* ═══════════════════════════════════════════════════════════════
    START INGESTION MODAL
 ═══════════════════════════════════════════════════════════════ */
-function StartIngestionModal({ onClose, onStart }) {
-    const [source, setSource] = useState("");
-    const [entity, setEntity] = useState("");
-    const [runType, setRunType] = useState("");
-    const [triggerType, setTriggerType] = useState("MANUAL");
-    const [errors, setErrors] = useState({});
+interface StartIngestionModalProps {
+    onClose: () => void;
+    onStart: (data: StartIngestionData) => void;
+}
 
-    const handleSubmit = () => {
-        const errs = {};
+function StartIngestionModal({ onClose, onStart }: StartIngestionModalProps): JSX.Element {
+    const [source, setSource] = useState<string>("");
+    const [entity, setEntity] = useState<string>("");
+    const [runType, setRunType] = useState<string>("");
+    const [triggerType, setTriggerType] = useState<string>("MANUAL");
+    const [errors, setErrors] = useState<ModalErrors>({});
+
+    const handleSubmit = (): void => {
+        const errs: ModalErrors = {};
         if (!source) errs.source = "Source system is required";
         if (!entity) errs.entity = "Entity type is required";
         if (!runType) errs.runType = "Run type is required";
         if (!triggerType) errs.triggerType = "Trigger type is required";
         if (Object.keys(errs).length) { setErrors(errs); return; }
-        onStart({ source, entity, runType, triggerType });
+        onStart({
+            source,
+            entity: entity as EntityType,
+            runType: runType as RunType,
+            triggerType: triggerType as TriggerType,
+        });
     };
 
     return (
         <div className="sim-overlay" onClick={onClose}>
-            <div className="sim-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="sim-modal" onClick={(e: React.MouseEvent) => e.stopPropagation()} role="dialog" aria-modal="true">
                 <div className="sim-header">
                     <div>
                         <h2 className="sim-header__title">Start Ingestion Run</h2>
@@ -324,7 +389,7 @@ function StartIngestionModal({ onClose, onStart }) {
                         <div className="sim-field-grid">
                             <div className={`sim-field sim-field--full${errors.source ? " sim-field--error" : ""}`}>
                                 <label className="sim-label">Source System <span className="sim-required">*</span></label>
-                                <select className="sim-select" value={source} onChange={e => setSource(e.target.value)}>
+                                <select className="sim-select" value={source} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSource(e.target.value)}>
                                     <option value="">— Select source —</option>
                                     {MOCK_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
@@ -333,26 +398,26 @@ function StartIngestionModal({ onClose, onStart }) {
 
                             <div className={`sim-field${errors.entity ? " sim-field--error" : ""}`}>
                                 <label className="sim-label">Entity Type <span className="sim-required">*</span></label>
-                                <select className="sim-select" value={entity} onChange={e => setEntity(e.target.value)}>
+                                <select className="sim-select" value={entity} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setEntity(e.target.value)}>
                                     <option value="">— Select entity —</option>
-                                    {["CUSTOMER", "SUPPLIER", "PRODUCT", "ACCOUNT", "ASSET", "LOCATION"].map(e => <option key={e} value={e}>{e}</option>)}
+                                    {(["CUSTOMER", "SUPPLIER", "PRODUCT", "ACCOUNT", "ASSET", "LOCATION"] as EntityType[]).map(e => <option key={e} value={e}>{e}</option>)}
                                 </select>
                                 {errors.entity && <span className="sim-error-msg">{errors.entity}</span>}
                             </div>
 
                             <div className={`sim-field${errors.runType ? " sim-field--error" : ""}`}>
                                 <label className="sim-label">Run Type <span className="sim-required">*</span></label>
-                                <select className="sim-select" value={runType} onChange={e => setRunType(e.target.value)}>
+                                <select className="sim-select" value={runType} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setRunType(e.target.value)}>
                                     <option value="">— Select run type —</option>
-                                    {["INITIAL_LOAD", "DELTA_LOAD", "REPROCESS", "TEST_LOAD"].map(t => <option key={t} value={t}>{t}</option>)}
+                                    {(["INITIAL_LOAD", "DELTA_LOAD", "REPROCESS", "TEST_LOAD"] as RunType[]).map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                                 {errors.runType && <span className="sim-error-msg">{errors.runType}</span>}
                             </div>
 
                             <div className={`sim-field${errors.triggerType ? " sim-field--error" : ""}`}>
                                 <label className="sim-label">Trigger Type <span className="sim-required">*</span></label>
-                                <select className="sim-select" value={triggerType} onChange={e => setTriggerType(e.target.value)}>
-                                    {["MANUAL", "SCHEDULED", "API", "EVENT"].map(t => <option key={t} value={t}>{t}</option>)}
+                                <select className="sim-select" value={triggerType} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTriggerType(e.target.value)}>
+                                    {(["MANUAL", "SCHEDULED", "API", "EVENT"] as TriggerType[]).map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                                 {errors.triggerType && <span className="sim-error-msg">{errors.triggerType}</span>}
                             </div>
@@ -374,14 +439,21 @@ function StartIngestionModal({ onClose, onStart }) {
 /* ═══════════════════════════════════════════════════════════════
    RUN DETAILS DRAWER
 ═══════════════════════════════════════════════════════════════ */
-function RunDetailsDrawer({ run, onClose }) {
-    const [tab, setTab] = useState("overview");
-    const timeline = RUN_TIMELINES[run.status] || RUN_TIMELINES["CREATED"];
-    const errors = RUN_ERRORS[run.status] || [];
+type DrawerTab = "overview" | "timeline" | "errors";
+
+interface RunDetailsDrawerProps {
+    run: IngestionRun;
+    onClose: () => void;
+}
+
+function RunDetailsDrawer({ run, onClose }: RunDetailsDrawerProps): JSX.Element {
+    const [tab, setTab] = useState<DrawerTab>("overview");
+    const timeline: TimelineItem[] = RUN_TIMELINES[run.status] || RUN_TIMELINES["CREATED"];
+    const errors: RunError[] = RUN_ERRORS[run.status] || [];
 
     return (
         <div className="ir-drawer-overlay" onClick={onClose}>
-            <div className="ir-drawer" onClick={e => e.stopPropagation()}>
+            <div className="ir-drawer" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                 <div className="ir-drawer__header">
                     <div>
                         <h2 className="ir-drawer__title">{run.source}</h2>
@@ -391,7 +463,7 @@ function RunDetailsDrawer({ run, onClose }) {
                 </div>
 
                 <div className="ir-drawer-tabs">
-                    {[["overview", "Overview"], ["timeline", "Timeline"], ["errors", "Errors"]].map(([key, label]) => (
+                    {([["overview", "Overview"], ["timeline", "Timeline"], ["errors", "Errors"]] as [DrawerTab, string][]).map(([key, label]) => (
                         <button key={key} className={`ir-drawer-tab${tab === key ? " ir-drawer-tab--active" : ""}`} onClick={() => setTab(key)}>
                             {label}{key === "errors" && errors.length > 0 && <span style={{ marginLeft: 4, background: "var(--red-500)", color: "#fff", borderRadius: 99, fontSize: 10, padding: "1px 5px", fontWeight: 700 }}>{errors.length}</span>}
                         </button>
@@ -492,15 +564,15 @@ function RunDetailsDrawer({ run, onClose }) {
 /* ═══════════════════════════════════════════════════════════════
    INGESTION RUNS PAGE
 ═══════════════════════════════════════════════════════════════ */
-export default function IngestionRuns() {
-    const [runs, setRuns] = useState(MOCK_RUNS);
-    const [showModal, setShowModal] = useState(false);
-    const [viewRun, setViewRun] = useState(null);
-    const [search, setSearch] = useState("");
-    const [filterStatus, setFilterStatus] = useState("ALL");
-    const [filterSource, setFilterSource] = useState("ALL");
-    const [lastRefresh, setLastRefresh] = useState(new Date());
-    const refreshRef = useRef(null);
+export default function IngestionRuns(): JSX.Element {
+    const [runs, setRuns] = useState<IngestionRun[]>(MOCK_RUNS);
+    const [showModal, setShowModal] = useState<boolean>(false);
+    const [viewRun, setViewRun] = useState<IngestionRun | null>(null);
+    const [search, setSearch] = useState<string>("");
+    const [filterStatus, setFilterStatus] = useState<string>("ALL");
+    const [filterSource, setFilterSource] = useState<string>("ALL");
+    const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+    const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     /* Auto-refresh every 10s for running jobs */
     useEffect(() => {
@@ -508,7 +580,6 @@ export default function IngestionRuns() {
             const hasRunning = runs.some(r => r.status === "RUNNING");
             if (hasRunning) {
                 setLastRefresh(new Date());
-                /* Simulate slight progress on running jobs */
                 setRuns(prev => prev.map(r =>
                     r.status === "RUNNING"
                         ? { ...r, loadedRecords: Math.min(r.totalRecords, r.loadedRecords + Math.floor(Math.random() * 800 + 200)) }
@@ -516,7 +587,9 @@ export default function IngestionRuns() {
                 ));
             }
         }, 10000);
-        return () => clearInterval(refreshRef.current);
+        return () => {
+            if (refreshRef.current) clearInterval(refreshRef.current);
+        };
     }, [runs]);
 
     const filtered = runs.filter(r => {
@@ -528,8 +601,8 @@ export default function IngestionRuns() {
         );
     });
 
-    const handleStart = (data) => {
-        const newRun = {
+    const handleStart = (data: StartIngestionData): void => {
+        const newRun: IngestionRun = {
             id: `RUN-${String(Math.floor(Math.random() * 9000) + 1000)}`,
             source: data.source,
             entity: data.entity,
@@ -587,14 +660,14 @@ export default function IngestionRuns() {
                 <div className="ir-table-toolbar">
                     <div className="ir-search-wrap">
                         <span className="ir-search-icon">🔍</span>
-                        <input className="ir-search-input" placeholder="Search by run ID, source, entity…" value={search} onChange={e => setSearch(e.target.value)} />
+                        <input className="ir-search-input" placeholder="Search by run ID, source, entity…" value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} />
                     </div>
                     <div className="ir-filter-row">
-                        <select className="ir-select" value={filterSource} onChange={e => setFilterSource(e.target.value)}>
+                        <select className="ir-select" value={filterSource} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterSource(e.target.value)}>
                             <option value="ALL">All Sources</option>
                             {MOCK_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
-                        <select className="ir-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                        <select className="ir-select" value={filterStatus} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value)}>
                             <option value="ALL">All Statuses</option>
                             {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                         </select>
@@ -638,12 +711,12 @@ export default function IngestionRuns() {
                                     <td><span className="ir-count-cell">{run.totalRecords > 0 ? run.totalRecords.toLocaleString() : <span className="ir-count-cell--muted">—</span>}</span></td>
                                     <td><span className="ir-count-cell">{run.loadedRecords > 0 ? run.loadedRecords.toLocaleString() : <span className="ir-count-cell--muted">—</span>}</span></td>
                                     <td><span className={run.failedRecords > 0 ? "ir-count-cell ir-count-cell--failed" : "ir-count-cell"}>{run.failedRecords > 0 ? run.failedRecords.toLocaleString() : <span className="ir-count-cell--muted">0</span>}</span></td>
-                                    <td onClick={e => e.stopPropagation()} style={{ minWidth: 120 }}>
+                                    <td onClick={(e: React.MouseEvent) => e.stopPropagation()} style={{ minWidth: 120 }}>
                                         {run.totalRecords > 0 ? <ProgressBar loaded={run.loadedRecords} total={run.totalRecords} /> : <span className="ir-ts-na">—</span>}
                                     </td>
                                     <td><span className="ir-ts">{run.startedAt}</span></td>
                                     <td><span className={run.completedAt ? "ir-ts" : "ir-ts-na"}>{run.completedAt || "—"}</span></td>
-                                    <td onClick={e => e.stopPropagation()}>
+                                    <td onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                                         <div className="ir-action-row">
                                             <button className="ir-action-btn ir-action-btn--primary" onClick={() => setViewRun(run)}>Details</button>
                                             {run.status === "FAILED" && <button className="ir-action-btn ir-action-btn--danger">Retry</button>}

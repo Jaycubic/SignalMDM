@@ -1,4 +1,28 @@
-import { useState, useRef, useCallback } from "react";
+//UploadData
+import { useState, useRef, useCallback, type DragEvent, type ChangeEvent } from "react";
+
+type InputMode = "file" | "json";
+type UploadStatus = "uploading" | "success" | "error" | null;
+type ValidationStatus = "VALID" | "WARNING" | "ERROR";
+
+interface RunOption {
+    id: string;
+    label: string;
+}
+
+interface PreviewRow {
+    rowNum: number;
+    srcId: string;
+    payload: string;
+    status: ValidationStatus;
+}
+
+interface ErrorState {
+    runId?: string | null;
+    entityType?: string | null;
+    file?: string | null;
+    json?: string | null;
+}
 
 const CSS = `
 .ud-page{display:flex;flex-direction:column;gap:20px;max-width:1400px;padding:24px;font-family:'Geist','DM Sans',system-ui,sans-serif}
@@ -127,7 +151,7 @@ if (typeof document !== "undefined" && !document.getElementById("ud-styles")) {
 }
 
 /* ─── Constants ──────────────────────────────────────────────── */
-const MOCK_RUNS = [
+const MOCK_RUNS: RunOption[] = [
     { id: "RUN-0042", label: "RUN-0042 — Salesforce CRM / CUSTOMER" },
     { id: "RUN-0041", label: "RUN-0041 — SAP ERP Core / PRODUCT" },
     { id: "RUN-0040", label: "RUN-0040 — Oracle Finance / ACCOUNT" },
@@ -136,9 +160,9 @@ const MOCK_RUNS = [
 
 const ENTITIES = ["CUSTOMER", "SUPPLIER", "PRODUCT", "ACCOUNT", "ASSET", "LOCATION"];
 
-const FORMAT_ICONS = { csv: "📄", xlsx: "📊", json: "📋", default: "📁" };
+const FORMAT_ICONS: Record<string, string> = { csv: "📄", xlsx: "📊", json: "📋", default: "📁" };
 
-const MOCK_PREVIEW_ROWS = [
+const MOCK_PREVIEW_ROWS: PreviewRow[] = [
     { rowNum: 1, srcId: "SF-CRM-00142", payload: '{"customerName":"ABC Pharma Pvt. Ltd.","emailId":"contact@abc.com","phone":"+91-9900112233"}', status: "VALID" },
     { rowNum: 2, srcId: "SF-CRM-00143", payload: '{"customerName":"Delta Logistics","emailId":"ops@delta.io","phone":"+91-9812345678"}', status: "VALID" },
     { rowNum: 3, srcId: "SF-CRM-00144", payload: '{"customerName":"NexGen Solutions","emailId":"","phone":"+91-8877665544"}', status: "WARNING" },
@@ -147,7 +171,7 @@ const MOCK_PREVIEW_ROWS = [
     { rowNum: 6, srcId: "SF-CRM-00147", payload: '{"customerName":"Apex Systems","emailId":"admin@apex.com","phone":"+91-9988776655"}', status: "VALID" },
 ];
 
-const JSON_PLACEHOLDER = `[
+const JSON_PLACEHOLDER = `[  
   {
     "customerName": "ABC Pharma Pvt. Ltd.",
     "emailId": "contact@abc.com",
@@ -161,11 +185,12 @@ const JSON_PLACEHOLDER = `[
   }
 ]`;
 
-function getFileExt(name) {
-    return name.split(".").pop().toLowerCase();
+function getFileExt(name: string): string {
+    const parts = name.split(".");
+    return (parts[parts.length - 1] || "").toLowerCase();
 }
 
-function formatBytes(bytes) {
+function formatBytes(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
@@ -173,49 +198,55 @@ function formatBytes(bytes) {
 
 /* ─── Upload Data Page ───────────────────────────────────────── */
 export default function UploadData() {
-    const [runId, setRunId] = useState("");
-    const [entityType, setEntityType] = useState("");
-    const [inputMode, setInputMode] = useState("file"); // "file" | "json"
-    const [file, setFile] = useState(null);
-    const [jsonPayload, setJsonPayload] = useState("");
-    const [isDragging, setIsDragging] = useState(false);
-    const [errors, setErrors] = useState({});
-    const [uploadProgress, setUploadProgress] = useState(null); // null | 0-100
-    const [uploadStatus, setUploadStatus] = useState(null); // null | "uploading" | "success" | "error"
-    const [previewRows, setPreviewRows] = useState(null);
-    const [jsonError, setJsonError] = useState("");
-    const fileInputRef = useRef(null);
+    const [runId, setRunId] = useState<string>("");
+    const [entityType, setEntityType] = useState<string>("");
+    const [inputMode, setInputMode] = useState<InputMode>("file");
+    const [file, setFile] = useState<File | null>(null);
+    const [jsonPayload, setJsonPayload] = useState<string>("");
+    const [isDragging, setIsDragging] = useState<boolean>(false);
+    const [errors, setErrors] = useState<ErrorState>({});
+    const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+    const [uploadStatus, setUploadStatus] = useState<UploadStatus>(null);
+    const [previewRows, setPreviewRows] = useState<PreviewRow[] | null>(null);
+    const [jsonError, setJsonError] = useState<string>("");
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     /* Drag-and-drop handlers */
-    const handleDrop = useCallback((e) => {
-        e.preventDefault();
-        setIsDragging(false);
-        const dropped = e.dataTransfer.files[0];
-        if (dropped) handleFileSelect(dropped);
-    }, []);
-
-    const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
-    const handleDragLeave = () => setIsDragging(false);
-
-    const handleFileSelect = (f) => {
+    const handleFileSelect = useCallback((f: File) => {
         const ext = getFileExt(f.name);
         if (!["csv", "xlsx", "xls", "json"].includes(ext)) {
-            setErrors(prev => ({ ...prev, file: "Unsupported format. Use CSV, Excel, or JSON." }));
+            setErrors((prev) => ({ ...prev, file: "Unsupported format. Use CSV, Excel, or JSON." }));
             return;
         }
         if (f.size === 0) {
-            setErrors(prev => ({ ...prev, file: "File is empty." }));
+            setErrors((prev) => ({ ...prev, file: "File is empty." }));
             return;
         }
-        setErrors(prev => ({ ...prev, file: null }));
+        setErrors((prev) => ({ ...prev, file: null }));
         setFile(f);
         setUploadStatus(null);
         setUploadProgress(null);
-        // Generate preview after a short delay
         setTimeout(() => setPreviewRows(MOCK_PREVIEW_ROWS), 400);
+    }, []);
+
+    const handleDrop = useCallback(
+        (e: DragEvent<HTMLDivElement>) => {
+            e.preventDefault();
+            setIsDragging(false);
+            const dropped = e.dataTransfer.files[0];
+            if (dropped) handleFileSelect(dropped);
+        },
+        [handleFileSelect]
+    );
+
+    const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setIsDragging(true);
     };
 
-    const handleJsonChange = (val) => {
+    const handleDragLeave = () => setIsDragging(false);
+
+    const handleJsonChange = (val: string) => {
         setJsonPayload(val);
         setJsonError("");
         if (val.trim()) {
@@ -232,13 +263,17 @@ export default function UploadData() {
     };
 
     const validate = () => {
-        const errs = {};
+        const errs: ErrorState = {};
         if (!runId) errs.runId = "Ingestion run is required";
         if (!entityType) errs.entityType = "Entity type is required";
         if (inputMode === "file" && !file) errs.file = "Please select a file to upload";
         if (inputMode === "json" && !jsonPayload.trim()) errs.json = "Paste a valid JSON payload";
         if (inputMode === "json" && jsonPayload.trim()) {
-            try { JSON.parse(jsonPayload); } catch { errs.json = "Invalid JSON format"; }
+            try {
+                JSON.parse(jsonPayload);
+            } catch {
+                errs.json = "Invalid JSON format";
+            }
         }
         setErrors(errs);
         return Object.keys(errs).length === 0;
@@ -271,9 +306,9 @@ export default function UploadData() {
         setJsonError("");
     };
 
-    const valid = previewRows ? previewRows.filter(r => r.status === "VALID").length : 0;
-    const errCount = previewRows ? previewRows.filter(r => r.status === "ERROR").length : 0;
-    const warnCount = previewRows ? previewRows.filter(r => r.status === "WARNING").length : 0;
+    const valid = previewRows ? previewRows.filter((r) => r.status === "VALID").length : 0;
+    const errCount = previewRows ? previewRows.filter((r) => r.status === "ERROR").length : 0;
+    const warnCount = previewRows ? previewRows.filter((r) => r.status === "WARNING").length : 0;
 
     return (
         <div className="ud-page">
@@ -284,7 +319,9 @@ export default function UploadData() {
                     <p className="ud-page-subtitle">Upload raw source data into the ingestion pipeline</p>
                 </div>
                 {uploadStatus === "success" && (
-                    <button className="ud-btn ud-btn--ghost" onClick={handleReset}>↻ Upload Another</button>
+                    <button className="ud-btn ud-btn--ghost" onClick={handleReset}>
+                        ↻ Upload Another
+                    </button>
                 )}
             </div>
 
@@ -299,20 +336,32 @@ export default function UploadData() {
                     <div className="ud-card-body">
                         {/* Run select */}
                         <div className={`ud-field${errors.runId ? " ud-field--error" : ""}`}>
-                            <label className="ud-label">Ingestion Run <span className="ud-required">*</span></label>
-                            <select className="ud-select" value={runId} onChange={e => setRunId(e.target.value)}>
+                            <label className="ud-label">
+                                Ingestion Run <span className="ud-required">*</span>
+                            </label>
+                            <select className="ud-select" value={runId} onChange={(e: ChangeEvent<HTMLSelectElement>) => setRunId(e.target.value)}>
                                 <option value="">— Select ingestion run —</option>
-                                {MOCK_RUNS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                                {MOCK_RUNS.map((r) => (
+                                    <option key={r.id} value={r.id}>
+                                        {r.label}
+                                    </option>
+                                ))}
                             </select>
                             {errors.runId && <span className="ud-error-msg">{errors.runId}</span>}
                         </div>
 
                         {/* Entity select */}
                         <div className={`ud-field${errors.entityType ? " ud-field--error" : ""}`}>
-                            <label className="ud-label">Entity Type <span className="ud-required">*</span></label>
-                            <select className="ud-select" value={entityType} onChange={e => setEntityType(e.target.value)}>
+                            <label className="ud-label">
+                                Entity Type <span className="ud-required">*</span>
+                            </label>
+                            <select className="ud-select" value={entityType} onChange={(e: ChangeEvent<HTMLSelectElement>) => setEntityType(e.target.value)}>
                                 <option value="">— Select entity type —</option>
-                                {ENTITIES.map(e => <option key={e} value={e}>{e}</option>)}
+                                {ENTITIES.map((e) => (
+                                    <option key={e} value={e}>
+                                        {e}
+                                    </option>
+                                ))}
                             </select>
                             {errors.entityType && <span className="ud-error-msg">{errors.entityType}</span>}
                         </div>
@@ -321,11 +370,26 @@ export default function UploadData() {
                         <div className="ud-field">
                             <label className="ud-label">Input Method</label>
                             <div className="ud-mode-tabs">
-                                <button className={`ud-mode-tab${inputMode === "file" ? " ud-mode-tab--active" : ""}`} onClick={() => { setInputMode("file"); setPreviewRows(null); }}>
+                                <button
+                                    className={`ud-mode-tab${inputMode === "file" ? " ud-mode-tab--active" : ""}`}
+                                    onClick={() => {
+                                        setInputMode("file");
+                                        setPreviewRows(null);
+                                    }}
+                                    type="button"
+                                >
                                     📁 File Upload
                                 </button>
-                                <button className={`ud-mode-tab${inputMode === "json" ? " ud-mode-tab--active" : ""}`} onClick={() => { setInputMode("json"); setFile(null); setPreviewRows(null); }}>
-                                    { } Paste JSON
+                                <button
+                                    className={`ud-mode-tab${inputMode === "json" ? " ud-mode-tab--active" : ""}`}
+                                    onClick={() => {
+                                        setInputMode("json");
+                                        setFile(null);
+                                        setPreviewRows(null);
+                                    }}
+                                    type="button"
+                                >
+                                    📋 Paste JSON
                                 </button>
                             </div>
                         </div>
@@ -354,7 +418,10 @@ export default function UploadData() {
                                             type="file"
                                             accept=".csv,.xlsx,.xls,.json"
                                             style={{ display: "none" }}
-                                            onChange={e => { if (e.target.files[0]) handleFileSelect(e.target.files[0]); }}
+                                            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                                const selected = e.target.files?.[0];
+                                                if (selected) handleFileSelect(selected);
+                                            }}
                                         />
                                     </div>
                                 ) : (
@@ -364,7 +431,17 @@ export default function UploadData() {
                                             <div className="ud-file-name">{file.name}</div>
                                             <div className="ud-file-size">{formatBytes(file.size)}</div>
                                         </div>
-                                        <button className="ud-file-remove" onClick={() => { setFile(null); setPreviewRows(null); setUploadStatus(null); }}>✕</button>
+                                        <button
+                                            className="ud-file-remove"
+                                            onClick={() => {
+                                                setFile(null);
+                                                setPreviewRows(null);
+                                                setUploadStatus(null);
+                                            }}
+                                            type="button"
+                                        >
+                                            ✕
+                                        </button>
                                     </div>
                                 )}
                                 {errors.file && <span className="ud-error-msg">{errors.file}</span>}
@@ -379,7 +456,7 @@ export default function UploadData() {
                                     className="ud-json-textarea"
                                     placeholder={JSON_PLACEHOLDER}
                                     value={jsonPayload}
-                                    onChange={e => handleJsonChange(e.target.value)}
+                                    onChange={(e: ChangeEvent<HTMLTextAreaElement>) => handleJsonChange(e.target.value)}
                                 />
                                 {jsonError && <span className="ud-error-msg">{jsonError}</span>}
                                 {errors.json && <span className="ud-error-msg">{errors.json}</span>}
@@ -421,12 +498,15 @@ export default function UploadData() {
                     </div>
 
                     <div className="ud-card-footer">
-                        <button className="ud-btn ud-btn--ghost" onClick={handleReset}>Reset</button>
+                        <button className="ud-btn ud-btn--ghost" onClick={handleReset} type="button">
+                            Reset
+                        </button>
                         <button
                             className="ud-btn ud-btn--primary"
                             onClick={handleUpload}
                             disabled={uploadStatus === "uploading" || uploadStatus === "success"}
-                            style={{ opacity: (uploadStatus === "uploading" || uploadStatus === "success") ? .55 : 1 }}
+                            style={{ opacity: uploadStatus === "uploading" || uploadStatus === "success" ? 0.55 : 1 }}
+                            type="button"
                         >
                             {uploadStatus === "uploading" ? "⏳ Uploading…" : "⬆ Confirm Upload"}
                         </button>
@@ -445,7 +525,7 @@ export default function UploadData() {
                             )}
                         </div>
                         {previewRows && errCount > 0 && (
-                            <button className="ud-btn ud-btn--ghost" style={{ fontSize: 12, padding: "6px 12px" }}>
+                            <button className="ud-btn ud-btn--ghost" style={{ fontSize: 12, padding: "6px 12px" }} type="button">
                                 ⬇ Download Errors ({errCount})
                             </button>
                         )}
@@ -455,7 +535,9 @@ export default function UploadData() {
                         <div className="ud-preview-empty">
                             <span className="ud-preview-empty__icon">🗃</span>
                             <span className="ud-preview-empty__title">No preview available</span>
-                            <span className="ud-preview-empty__sub">Select a file or paste JSON to see a preview of your data before uploading.</span>
+                            <span className="ud-preview-empty__sub">
+                                Select a file or paste JSON to see a preview of your data before uploading.
+                            </span>
                         </div>
                     ) : (
                         <>
@@ -470,11 +552,17 @@ export default function UploadData() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {previewRows.map(row => (
+                                        {previewRows.map((row) => (
                                             <tr key={row.rowNum}>
-                                                <td><span className="ud-row-num">#{row.rowNum}</span></td>
-                                                <td><span className="ud-src-id">{row.srcId}</span></td>
-                                                <td><code className="ud-payload-preview">{row.payload}</code></td>
+                                                <td>
+                                                    <span className="ud-row-num">#{row.rowNum}</span>
+                                                </td>
+                                                <td>
+                                                    <span className="ud-src-id">{row.srcId}</span>
+                                                </td>
+                                                <td>
+                                                    <code className="ud-payload-preview">{row.payload}</code>
+                                                </td>
                                                 <td>
                                                     <span className={`ud-val-badge ud-val-badge--${row.status.toLowerCase()}`}>
                                                         {row.status === "VALID" ? "✓" : row.status === "ERROR" ? "✕" : "⚠"} {row.status}
