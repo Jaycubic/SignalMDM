@@ -5,6 +5,7 @@ import IngestionRuns from './pages/ingestion/IngestionRuns';
 import RawLanding from './pages/rawlanding/RawLanding';
 import UploadData from './pages/upload/UploadData';
 import StagingRecords from './pages/staging/StagingRecords';
+import DevSetup from './pages/DevSetup';
 import './index.css';
 
 function Placeholder({ title }: { title: string }) {
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="staging" element={<StagingRecords />} />
           <Route path="api-logs" element={<Placeholder title="API Logs — Coming Soon" />} />
           <Route path="system-health" element={<Placeholder title="System Health — Coming Soon" />} />
+          <Route path="dev-setup" element={<DevSetup />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

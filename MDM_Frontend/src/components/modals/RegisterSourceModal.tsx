@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
-import type { SourceRecord } from '../../pages/source/SourceSystems';
+import {
+  sourceService,
+  type SourceRecord,
+  type SourceType,
+  type ConnectionType,
+} from '../../services/sourceService';
 
 /* ─── Styles (CSS merged into this component file) ───────────── */
 const CSS = `
@@ -103,13 +108,15 @@ const DEFAULT_PRIORITY: Record<EntityType, PriorityRow[]> = {
   LOCATION: [{ attribute: 'location_name', priority: 1 }, { attribute: 'address', priority: 1 }, { attribute: 'region', priority: 2 }],
 };
 
+// CONN_FIELDS keys match backend ConnectionTypeEnum: CSV | JSON | REST_API | JDBC | SFTP | S3 | OTHER
 const CONN_FIELDS: Record<ConnectionType, { field: string; label: string; type?: string; placeholder?: string }[]> = {
-  API: [{ field: 'baseUrl', label: 'Base URL', type: 'url', placeholder: 'https://api.example.com' }, { field: 'authType', label: 'Auth Type', placeholder: 'Bearer / OAuth2 / Basic' }, { field: 'apiKey', label: 'API Key', type: 'password', placeholder: '••••••••••••••••' }, { field: 'timeout', label: 'Timeout (ms)', type: 'number', placeholder: '30000' }],
-  FILE_UPLOAD: [{ field: 'fileFormat', label: 'File Format', placeholder: 'CSV / Excel / JSON' }, { field: 'delimiter', label: 'Delimiter', placeholder: ',' }, { field: 'encoding', label: 'Encoding', placeholder: 'UTF-8' }],
-  DATABASE: [{ field: 'host', label: 'Host', placeholder: 'db.example.com' }, { field: 'port', label: 'Port', type: 'number', placeholder: '5432' }, { field: 'database', label: 'Database', placeholder: 'mdm_source' }, { field: 'username', label: 'Username', placeholder: 'db_user' }, { field: 'password', label: 'Password', type: 'password', placeholder: '••••••••' }],
-  SFTP: [{ field: 'host', label: 'Host', placeholder: 'sftp.example.com' }, { field: 'port', label: 'Port', type: 'number', placeholder: '22' }, { field: 'remotePath', label: 'Remote Path', placeholder: '/data/incoming' }, { field: 'username', label: 'Username', placeholder: 'sftp_user' }, { field: 'privateKey', label: 'Private Key (path)', placeholder: '/keys/id_rsa' }],
-  STREAM: [{ field: 'brokerUrl', label: 'Broker URL', placeholder: 'kafka://broker:9092' }, { field: 'topic', label: 'Topic', placeholder: 'mdm.source.events' }, { field: 'groupId', label: 'Consumer Group', placeholder: 'mdm-consumer-1' }],
-  MANUAL: [{ field: 'notes', label: 'Notes / Description', placeholder: 'Describe the manual process…' }],
+  REST_API: [{ field: 'baseUrl', label: 'Base URL', type: 'url', placeholder: 'https://api.example.com' }, { field: 'authType', label: 'Auth Type', placeholder: 'Bearer / OAuth2 / Basic' }, { field: 'apiKey', label: 'API Key', type: 'password', placeholder: '••••••••••••••••' }, { field: 'timeout', label: 'Timeout (ms)', type: 'number', placeholder: '30000' }],
+  CSV:      [{ field: 'fileFormat', label: 'File Format', placeholder: 'CSV' }, { field: 'delimiter', label: 'Delimiter', placeholder: ',' }, { field: 'encoding', label: 'Encoding', placeholder: 'UTF-8' }, { field: 'path', label: 'File Path / URL', placeholder: '/data/import.csv' }],
+  JSON:     [{ field: 'fileFormat', label: 'File Format', placeholder: 'JSON' }, { field: 'encoding', label: 'Encoding', placeholder: 'UTF-8' }, { field: 'path', label: 'File Path / URL', placeholder: '/data/import.json' }],
+  JDBC:     [{ field: 'host', label: 'Host', placeholder: 'db.example.com' }, { field: 'port', label: 'Port', type: 'number', placeholder: '5432' }, { field: 'database', label: 'Database', placeholder: 'mdm_source' }, { field: 'username', label: 'Username', placeholder: 'db_user' }, { field: 'password', label: 'Password', type: 'password', placeholder: '••••••••' }],
+  SFTP:     [{ field: 'host', label: 'Host', placeholder: 'sftp.example.com' }, { field: 'port', label: 'Port', type: 'number', placeholder: '22' }, { field: 'remotePath', label: 'Remote Path', placeholder: '/data/incoming' }, { field: 'username', label: 'Username', placeholder: 'sftp_user' }, { field: 'privateKey', label: 'Private Key (path)', placeholder: '/keys/id_rsa' }],
+  S3:       [{ field: 'bucket', label: 'Bucket Name', placeholder: 'my-mdm-bucket' }, { field: 'region', label: 'Region', placeholder: 'us-east-1' }, { field: 'prefix', label: 'Key Prefix', placeholder: 'data/imports/' }, { field: 'accessKey', label: 'Access Key ID', placeholder: 'AKIA…' }, { field: 'secretKey', label: 'Secret Access Key', type: 'password', placeholder: '••••••••' }],
+  OTHER:    [{ field: 'notes', label: 'Notes / Description', placeholder: 'Describe the connection…' }],
 };
 
 const ALL_ENTITIES: EntityType[] = ['CUSTOMER', 'SUPPLIER', 'PRODUCT', 'ACCOUNT', 'ASSET', 'LOCATION'];
@@ -119,7 +126,7 @@ const STEP_LABELS = ['Basic Info', 'Entities', 'Priority', 'Connection'];
 /* ─── Props ──────────────────────────────────────────────────── */
 interface Props {
   onClose: () => void;
-  onRegister: (data: Omit<SourceRecord, 'id' | 'createdDate'>) => void;
+  onRegister: (record: SourceRecord) => void;
 }
 
 /* ─── Component ──────────────────────────────────────────────── */
@@ -129,16 +136,20 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
   const [sourceCode, setSourceCode] = useState('');
   const [sourceType, setSourceType] = useState<SourceType | ''>('');
   const [connectionType, setConnectionType] = useState<ConnectionType | ''>('');
-  const [status, setStatus] = useState<SourceRecord['status']>('ACTIVE');
   const [entities, setEntities] = useState<EntityType[]>([]);
   const [priorityConfig, setPriorityConfig] = useState<Record<string, PriorityRow[]>>({});
   const [connConfig, setConnConfig] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<FormErrors>({});
   const [codeEdited, setCodeEdited] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Auto-generate lowercase slug: backend requires ^[a-z0-9_\-]+$
   useEffect(() => {
     if (sourceName && !codeEdited) {
-      setSourceCode(sourceName.toUpperCase().replace(/[^A-Z0-9\s]/g, '').trim().replace(/\s+/g, '_'));
+      setSourceCode(
+        sourceName.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '_'),
+      );
     }
   }, [sourceName, codeEdited]);
 
@@ -157,7 +168,7 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
       const errs: FormErrors = {};
       if (!sourceName.trim()) errs.sourceName = 'Source name is required';
       if (!sourceCode.trim()) errs.sourceCode = 'Source code is required';
-      else if (!/^[A-Z0-9_]+$/.test(sourceCode)) errs.sourceCode = 'Uppercase letters, digits or underscores only';
+      else if (!/^[a-z0-9_\-]+$/.test(sourceCode)) errs.sourceCode = 'Lowercase letters, digits, underscores or hyphens only';
       if (!sourceType) errs.sourceType = 'Source type is required';
       if (!connectionType) errs.connectionType = 'Connection type is required';
       if (Object.keys(errs).length) { setErrors(errs); return; }
@@ -167,15 +178,27 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
     setStep(s => Math.min(s + 1, 4));
   };
 
-  const handleSubmit = () => {
-    onRegister({
-      sourceName,
-      sourceCode,
-      sourceType: sourceType as SourceType,
-      connectionType: connectionType as ConnectionType,
-      supportedEntities: entities,
-      status,
-    });
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const record = await sourceService.registerSource({
+        source_name:       sourceName,
+        source_code:       sourceCode,
+        source_type:       sourceType as SourceType,
+        connection_type:   connectionType as ConnectionType,
+        config_json: {
+          supported_entities: entities,
+          priority_config:    priorityConfig,
+          connection_config:  connConfig,
+        },
+      });
+      onRegister(record);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -216,15 +239,15 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
                 </div>
                 <div className={`rsm-field${errors.sourceCode ? ' rsm-field--error' : ''}`}>
                   <label htmlFor="rsm-source-code" className="rsm-label">Source Code <span className="rsm-required">*</span><span className="rsm-hint">AUTO-GENERATED</span></label>
-                  <input id="rsm-source-code" className="rsm-input rsm-input--mono" placeholder="CRM_SALESFORCE" value={sourceCode}
-                    onChange={e => { setCodeEdited(true); setSourceCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '')); }} />
+                  <input id="rsm-source-code" className="rsm-input rsm-input--mono" placeholder="salesforce_crm" value={sourceCode}
+                    onChange={e => { setCodeEdited(true); setSourceCode(e.target.value.toLowerCase().replace(/[^a-z0-9_\-]/g, '')); }} />
                   {errors.sourceCode && <span className="rsm-error-msg">{errors.sourceCode}</span>}
                 </div>
                 <div className={`rsm-field${errors.sourceType ? ' rsm-field--error' : ''}`}>
                   <label htmlFor="rsm-source-type" className="rsm-label">Source Type <span className="rsm-required">*</span></label>
                   <select id="rsm-source-type" className="rsm-select" value={sourceType} onChange={e => setSourceType(e.target.value as SourceType)}>
                     <option value="">— Select type —</option>
-                    {(['CRM', 'ERP', 'FINANCE', 'HRMS', 'SCM', 'OTHER_CORE_SYSTEM'] as const).map(t => (
+                    {(['CRM', 'ERP', 'DATABASE', 'FILE', 'API', 'STREAMING', 'OTHER'] as const).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
@@ -234,19 +257,11 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
                   <label htmlFor="rsm-conn-type" className="rsm-label">Connection Type <span className="rsm-required">*</span></label>
                   <select id="rsm-conn-type" className="rsm-select" value={connectionType} onChange={e => setConnectionType(e.target.value as ConnectionType)}>
                     <option value="">— Select connection —</option>
-                    {(['API', 'FILE_UPLOAD', 'DATABASE', 'SFTP', 'STREAM', 'MANUAL'] as const).map(t => (
+                    {(['CSV', 'JSON', 'REST_API', 'JDBC', 'SFTP', 'S3', 'OTHER'] as const).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
                   {errors.connectionType && <span className="rsm-error-msg">{errors.connectionType}</span>}
-                </div>
-                <div className="rsm-field">
-                  <label htmlFor="rsm-status" className="rsm-label">Status</label>
-                  <select id="rsm-status" className="rsm-select" value={status} onChange={e => setStatus(e.target.value as SourceRecord['status'])}>
-                    <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
-                    <option value="DRAFT">Draft</option>
-                  </select>
                 </div>
               </div>
             </div>
@@ -361,16 +376,32 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
 
         {/* Footer */}
         <div className="rsm-footer">
-          <button className="rsm-btn rsm-btn--ghost" onClick={onClose}>Cancel</button>
-          <div className="rsm-footer__right">
-            {step > 1 && (
-              <button className="rsm-btn rsm-btn--outline" onClick={() => setStep(s => s - 1)}>← Back</button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+            {submitError && (
+              <div className="rsm-alert rsm-alert--error" style={{ padding: '8px 12px', fontSize: '12px' }}>
+                ⚠ {submitError}
+              </div>
             )}
-            {step < 4 ? (
-              <button id="rsm-next-btn" className="rsm-btn rsm-btn--primary" onClick={handleNext}>Next →</button>
-            ) : (
-              <button id="rsm-register-btn" className="rsm-btn rsm-btn--primary rsm-btn--submit" onClick={handleSubmit}>✓ Register Source</button>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <button className="rsm-btn rsm-btn--ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+              <div className="rsm-footer__right">
+                {step > 1 && (
+                  <button className="rsm-btn rsm-btn--outline" onClick={() => setStep(s => s - 1)} disabled={submitting}>← Back</button>
+                )}
+                {step < 4 ? (
+                  <button id="rsm-next-btn" className="rsm-btn rsm-btn--primary" onClick={handleNext}>Next →</button>
+                ) : (
+                  <button
+                    id="rsm-register-btn"
+                    className="rsm-btn rsm-btn--primary rsm-btn--submit"
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                  >
+                    {submitting ? '⏳ Registering…' : '✓ Register Source'}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 

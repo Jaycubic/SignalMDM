@@ -1,8 +1,13 @@
-//Source Systems
-import { useState } from 'react';
+// Source Systems — integrated with backend via sourceService
+import { useState, useEffect, useCallback } from 'react';
 import RegisterSourceModal from '../../components/modals/RegisterSourceModal';
+import {
+  sourceService,
+  SOURCE_TYPES,
+  type SourceRecord,
+} from '../../services/sourceService';
 
-/* ─── Styles (CSS merged into this page file) ────────────────── */
+/* ─── Styles ─────────────────────────────────────────────────────────────── */
 const CSS = `
 .ss-page{display:flex;flex-direction:column;gap:20px;max-width:1400px}
 .ss-page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
@@ -15,6 +20,7 @@ const CSS = `
 .ss-btn--primary:hover{background:#0f49e0;box-shadow:0 4px 14px rgba(21,87,255,.38)}
 .ss-btn--ghost{background:#fff;color:var(--text-secondary);border:1px solid var(--border-light)}
 .ss-btn--ghost:hover{background:var(--surface-2);color:var(--text-primary)}
+.ss-btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
 .ss-summary-row{display:flex;gap:14px;flex-wrap:wrap}
 .ss-summary-card{background:#fff;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px 22px;display:flex;flex-direction:column;gap:3px;min-width:120px;box-shadow:var(--shadow-sm);border-top:3px solid var(--blue-400)}
 .ss-summary-card--green{border-top-color:var(--green-500)}
@@ -61,11 +67,12 @@ const CSS = `
 .ss-action-row{display:flex;gap:6px}
 .ss-action-btn{padding:5px 11px;border-radius:var(--radius-sm);font-size:12px;font-weight:500;background:var(--surface-2);color:var(--text-secondary);border:1px solid var(--border-light);transition:background .13s,color .13s;white-space:nowrap;cursor:pointer;font-family:inherit}
 .ss-action-btn:hover{background:var(--surface-3);color:var(--text-primary)}
-.ss-action-btn--primary{background:var(--blue-100);color:var(--blue-500);border-color:rgba(37,99,235,.2)}
-.ss-action-btn--primary:hover{background:rgba(37,99,235,.18)}
+.ss-action-btn--danger{background:var(--red-100);color:#dc2626;border-color:rgba(220,38,38,.2)}
+.ss-action-btn--danger:hover{background:rgba(220,38,38,.18)}
+.ss-action-btn:disabled{opacity:.5;cursor:not-allowed}
 .ss-drawer-overlay{position:fixed;inset:0;background:rgba(6,12,25,.45);z-index:200;display:flex;justify-content:flex-end;backdrop-filter:blur(2px);animation:fadeInOverlay .18s ease}
 @keyframes fadeInOverlay{from{opacity:0}to{opacity:1}}
-.ss-drawer{width:400px;max-width:95vw;background:#fff;height:100%;display:flex;flex-direction:column;box-shadow:var(--shadow-xl);animation:slideInDrawer .22s ease}
+.ss-drawer{width:420px;max-width:95vw;background:#fff;height:100%;display:flex;flex-direction:column;box-shadow:var(--shadow-xl);animation:slideInDrawer .22s ease}
 @keyframes slideInDrawer{from{transform:translateX(60px);opacity:0}to{transform:translateX(0);opacity:1}}
 .ss-drawer__header{display:flex;align-items:flex-start;justify-content:space-between;padding:22px 24px 18px;border-bottom:1px solid var(--border-light);background:var(--navy-900);gap:12px}
 .ss-drawer__title{font-size:16px;font-weight:700;color:#fff;margin:0 0 4px}
@@ -78,6 +85,12 @@ const CSS = `
 .ss-drawer__field-label{font-size:10.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px}
 .ss-drawer__section{display:flex;flex-direction:column;gap:8px}
 .ss-drawer__section-title{font-size:10.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px}
+.ss-drawer__field-value{font-size:13.5px;color:var(--text-primary)}
+.ss-loading{display:flex;align-items:center;justify-content:center;padding:60px 16px;gap:10px;color:var(--text-muted);font-size:14px}
+.ss-spinner{width:22px;height:22px;border:2px solid var(--border-light);border-top-color:var(--blue-500);border-radius:50%;animation:ss-spin .7s linear infinite;flex-shrink:0}
+@keyframes ss-spin{to{transform:rotate(360deg)}}
+.ss-error-banner{background:var(--red-100);color:#b91c1c;border:1px solid rgba(220,38,38,.2);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;display:flex;align-items:flex-start;gap:10px}
+.ss-error-banner__icon{font-size:16px;flex-shrink:0;margin-top:1px}
 `;
 
 if (typeof document !== 'undefined' && !document.getElementById('ss-styles')) {
@@ -87,36 +100,15 @@ if (typeof document !== 'undefined' && !document.getElementById('ss-styles')) {
   document.head.appendChild(el);
 }
 
-/* ─── Types ──────────────────────────────────────────────────── */
-export interface SourceRecord {
-  id: string;
-  sourceName: string;
-  sourceCode: string;
-  sourceType: string;
-  connectionType: string;
-  supportedEntities: string[];
-  status: 'ACTIVE' | 'INACTIVE' | 'DRAFT';
-  createdDate: string;
-}
-
-/* ─── Mock Data ──────────────────────────────────────────────── */
-const MOCK_SOURCES: SourceRecord[] = [
-  { id: '1', sourceName: 'Salesforce CRM', sourceCode: 'CRM_SALESFORCE', sourceType: 'CRM', connectionType: 'API', supportedEntities: ['CUSTOMER', 'ACCOUNT'], status: 'ACTIVE', createdDate: '2026-05-06' },
-  { id: '2', sourceName: 'SAP ERP Core', sourceCode: 'ERP_SAP_CORE', sourceType: 'ERP', connectionType: 'DATABASE', supportedEntities: ['SUPPLIER', 'PRODUCT', 'ASSET'], status: 'ACTIVE', createdDate: '2026-05-04' },
-  { id: '3', sourceName: 'Workday HRMS', sourceCode: 'HRMS_WORKDAY', sourceType: 'HRMS', connectionType: 'API', supportedEntities: ['CUSTOMER'], status: 'ACTIVE', createdDate: '2026-05-01' },
-  { id: '4', sourceName: 'Oracle Finance', sourceCode: 'FIN_ORACLE', sourceType: 'FINANCE', connectionType: 'SFTP', supportedEntities: ['ACCOUNT', 'SUPPLIER'], status: 'INACTIVE', createdDate: '2026-04-28' },
-  { id: '5', sourceName: 'Vendor Portal', sourceCode: 'SCM_VENDOR_PORTAL', sourceType: 'SCM', connectionType: 'FILE_UPLOAD', supportedEntities: ['SUPPLIER', 'PRODUCT', 'LOCATION'], status: 'DRAFT', createdDate: '2026-04-20' },
-  { id: '6', sourceName: 'Legacy Master DB', sourceCode: 'OTHER_LEGACY_MASTER', sourceType: 'OTHER_CORE_SYSTEM', connectionType: 'DATABASE', supportedEntities: ['CUSTOMER', 'ACCOUNT', 'PRODUCT'], status: 'ACTIVE', createdDate: '2026-04-15' },
-];
-
-/* ─── Sub-components ─────────────────────────────────────────── */
+/* ─── Sub-components ─────────────────────────────────────────────────────── */
 function StatusBadge({ status }: { status: SourceRecord['status'] }) {
-  const map = {
-    ACTIVE: { cls: 'badge--green', label: 'Active' },
-    INACTIVE: { cls: 'badge--red', label: 'Inactive' },
-    DRAFT: { cls: 'badge--amber', label: 'Draft' },
+  const map: Record<SourceRecord['status'], { cls: string; label: string }> = {
+    ACTIVE:    { cls: 'badge--green', label: 'Active' },
+    INACTIVE:  { cls: 'badge--red',   label: 'Inactive' },
+    SUSPENDED: { cls: 'badge--amber', label: 'Suspended' },
+    ARCHIVED:  { cls: 'badge--amber', label: 'Archived' },
   };
-  const { cls, label } = map[status];
+  const { cls, label } = map[status] ?? map.INACTIVE;
   return <span className={`ss-badge ${cls}`}>{label}</span>;
 }
 
@@ -125,8 +117,9 @@ function TypeChip({ type }: { type: string }) {
 }
 
 function EntityTags({ entities }: { entities: string[] }) {
+  if (!entities.length) return <span className="ss-conn-type">—</span>;
   const visible = entities.slice(0, 2);
-  const more = entities.length - 2;
+  const more    = entities.length - 2;
   return (
     <div className="ss-entity-tags">
       {visible.map(e => <span key={e} className="ss-entity-tag">{e}</span>)}
@@ -135,35 +128,70 @@ function EntityTags({ entities }: { entities: string[] }) {
   );
 }
 
-/* ─── Page ───────────────────────────────────────────────────── */
+/* ─── Page ───────────────────────────────────────────────────────────────── */
 export default function SourceSystems() {
-  const [sources, setSources] = useState<SourceRecord[]>(MOCK_SOURCES);
-  const [showModal, setShowModal] = useState(false);
-  const [search, setSearch] = useState('');
-  const [filterType, setFilterType] = useState('ALL');
-  const [filterStatus, setFilterStatus] = useState('ALL');
-  const [viewSource, setViewSource] = useState<SourceRecord | null>(null);
+  const [sources,       setSources]      = useState<SourceRecord[]>([]);
+  const [loading,       setLoading]      = useState(true);
+  const [error,         setError]        = useState<string | null>(null);
+  const [showModal,     setShowModal]    = useState(false);
+  const [search,        setSearch]       = useState('');
+  const [filterType,    setFilterType]   = useState('ALL');
+  const [filterStatus,  setFilterStatus] = useState('ALL');
+  const [viewSource,    setViewSource]   = useState<SourceRecord | null>(null);
+  const [deactivating,  setDeactivating] = useState<string | null>(null);
 
+  /* ── Load sources from API ────────────────────────────────────────────── */
+  const loadSources = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await sourceService.listSources();
+      setSources(data);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to load source systems.';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadSources(); }, [loadSources]);
+
+  /* ── Deactivate ───────────────────────────────────────────────────────── */
+  const handleDeactivate = async (src: SourceRecord) => {
+    if (!window.confirm(`Deactivate "${src.sourceName}"? This action cannot be undone.`)) return;
+    setDeactivating(src.id);
+    try {
+      const updated = await sourceService.deactivateSource(src.id);
+      setSources(prev => prev.map(s => s.id === updated.id ? updated : s));
+      if (viewSource?.id === updated.id) setViewSource(updated);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to deactivate source.';
+      alert(msg);
+    } finally {
+      setDeactivating(null);
+    }
+  };
+
+  /* ── After registration: prepend the new record (already from API) ────── */
+  const handleRegister = (newSource: SourceRecord) => {
+    setSources(prev => [newSource, ...prev]);
+    setShowModal(false);
+  };
+
+  /* ── Filtering ────────────────────────────────────────────────────────── */
   const filtered = sources.filter(s => {
     const q = search.toLowerCase();
     return (
       (s.sourceName.toLowerCase().includes(q) || s.sourceCode.toLowerCase().includes(q)) &&
-      (filterType === 'ALL' || s.sourceType === filterType) &&
-      (filterStatus === 'ALL' || s.status === filterStatus)
+      (filterType   === 'ALL' || s.sourceType   === filterType)  &&
+      (filterStatus === 'ALL' || s.status        === filterStatus)
     );
   });
 
-  const handleRegister = (data: Omit<SourceRecord, 'id' | 'createdDate'>) => {
-    setSources(prev => [
-      { ...data, id: String(Date.now()), createdDate: new Date().toISOString().slice(0, 10) },
-      ...prev,
-    ]);
-    setShowModal(false);
-  };
-
-  const active = sources.filter(s => s.status === 'ACTIVE').length;
-  const inactive = sources.filter(s => s.status === 'INACTIVE').length;
-  const draft = sources.filter(s => s.status === 'DRAFT').length;
+  const totalActive   = sources.filter(s => s.status === 'ACTIVE').length;
+  const totalInactive = sources.filter(s => s.status === 'INACTIVE').length;
+  const totalOther    = sources.filter(s => s.status === 'SUSPENDED' || s.status === 'ARCHIVED').length;
 
   return (
     <div className="ss-page">
@@ -175,11 +203,26 @@ export default function SourceSystems() {
           <p className="ss-page-subtitle">Register and manage core MDM source systems</p>
         </div>
         <div className="ss-page-header__actions">
-          <button className="ss-btn ss-btn--ghost" onClick={() => setSources([...MOCK_SOURCES])}>↻ Refresh</button>
-          <button className="ss-btn ss-btn--ghost">⬇ Export</button>
-          <button className="ss-btn ss-btn--primary" onClick={() => setShowModal(true)}>+ Register Source</button>
+          <button
+            className="ss-btn ss-btn--ghost"
+            onClick={loadSources}
+            disabled={loading}
+          >
+            {loading ? '…' : '↻'} Refresh
+          </button>
+          <button className="ss-btn ss-btn--primary" onClick={() => setShowModal(true)}>
+            + Register Source
+          </button>
         </div>
       </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="ss-error-banner">
+          <span className="ss-error-banner__icon">⚠</span>
+          <span>{error}</span>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="ss-summary-row">
@@ -188,20 +231,20 @@ export default function SourceSystems() {
           <span className="ss-summary-card__label">Total Sources</span>
         </div>
         <div className="ss-summary-card ss-summary-card--green">
-          <span className="ss-summary-card__value">{active}</span>
+          <span className="ss-summary-card__value">{totalActive}</span>
           <span className="ss-summary-card__label">Active</span>
         </div>
         <div className="ss-summary-card ss-summary-card--red">
-          <span className="ss-summary-card__value">{inactive}</span>
+          <span className="ss-summary-card__value">{totalInactive}</span>
           <span className="ss-summary-card__label">Inactive</span>
         </div>
         <div className="ss-summary-card ss-summary-card--amber">
-          <span className="ss-summary-card__value">{draft}</span>
-          <span className="ss-summary-card__label">Draft</span>
+          <span className="ss-summary-card__value">{totalOther}</span>
+          <span className="ss-summary-card__label">Suspended/Archived</span>
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table Card */}
       <div className="ss-table-card">
         <div className="ss-table-toolbar">
           <div className="ss-search-wrap">
@@ -215,68 +258,103 @@ export default function SourceSystems() {
             />
           </div>
           <div className="ss-filter-row">
-            <select id="ss-filter-type" className="ss-select" value={filterType} onChange={e => setFilterType(e.target.value)}>
+            <select
+              id="ss-filter-type"
+              className="ss-select"
+              value={filterType}
+              onChange={e => setFilterType(e.target.value)}
+            >
               <option value="ALL">All Types</option>
-              {['CRM', 'ERP', 'FINANCE', 'HRMS', 'SCM', 'OTHER_CORE_SYSTEM'].map(t => (
+              {SOURCE_TYPES.map(t => (
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
-            <select id="ss-filter-status" className="ss-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+            <select
+              id="ss-filter-status"
+              className="ss-select"
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+            >
               <option value="ALL">All Statuses</option>
               <option value="ACTIVE">Active</option>
               <option value="INACTIVE">Inactive</option>
-              <option value="DRAFT">Draft</option>
+              <option value="SUSPENDED">Suspended</option>
+              <option value="ARCHIVED">Archived</option>
             </select>
-            <span className="ss-count-label">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</span>
+            <span className="ss-count-label">
+              {filtered.length} record{filtered.length !== 1 ? 's' : ''}
+            </span>
           </div>
         </div>
 
         <div className="ss-table-wrap">
-          <table className="ss-table">
-            <thead>
-              <tr>
-                <th>Source Name</th>
-                <th>Source Code</th>
-                <th>Source Type</th>
-                <th>Connection Type</th>
-                <th>Supported Entities</th>
-                <th>Status</th>
-                <th>Created Date</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
+          {loading ? (
+            <div className="ss-loading">
+              <div className="ss-spinner" />
+              Loading source systems…
+            </div>
+          ) : (
+            <table className="ss-table">
+              <thead>
                 <tr>
-                  <td colSpan={8} className="ss-table-empty">
-                    <span>🗄</span>
-                    <p>No source systems found</p>
-                  </td>
+                  <th>Source Name</th>
+                  <th>Source Code</th>
+                  <th>Source Type</th>
+                  <th>Connection Type</th>
+                  <th>Supported Entities</th>
+                  <th>Status</th>
+                  <th>Created Date</th>
+                  <th>Actions</th>
                 </tr>
-              ) : filtered.map(src => (
-                <tr key={src.id} className="ss-table-row">
-                  <td>
-                    <div className="ss-source-name">
-                      <div className="ss-source-avatar">{src.sourceName.slice(0, 2).toUpperCase()}</div>
-                      <span className="ss-source-name__text">{src.sourceName}</span>
-                    </div>
-                  </td>
-                  <td><code className="ss-code">{src.sourceCode}</code></td>
-                  <td><TypeChip type={src.sourceType} /></td>
-                  <td><span className="ss-conn-type">{src.connectionType}</span></td>
-                  <td><EntityTags entities={src.supportedEntities} /></td>
-                  <td><StatusBadge status={src.status} /></td>
-                  <td className="ss-date">{src.createdDate}</td>
-                  <td>
-                    <div className="ss-action-row">
-                      <button className="ss-action-btn" onClick={() => setViewSource(src)}>View</button>
-                      <button className="ss-action-btn ss-action-btn--primary">Edit</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="ss-table-empty">
+                      <span>🗄</span>
+                      <p>No source systems found</p>
+                    </td>
+                  </tr>
+                ) : filtered.map(src => (
+                  <tr key={src.id} className="ss-table-row">
+                    <td>
+                      <div className="ss-source-name">
+                        <div className="ss-source-avatar">
+                          {src.sourceName.slice(0, 2).toUpperCase()}
+                        </div>
+                        <span className="ss-source-name__text">{src.sourceName}</span>
+                      </div>
+                    </td>
+                    <td><code className="ss-code">{src.sourceCode}</code></td>
+                    <td><TypeChip type={src.sourceType} /></td>
+                    <td><span className="ss-conn-type">{src.connectionType}</span></td>
+                    <td><EntityTags entities={src.supportedEntities} /></td>
+                    <td><StatusBadge status={src.status} /></td>
+                    <td className="ss-date">{src.createdDate}</td>
+                    <td>
+                      <div className="ss-action-row">
+                        <button
+                          className="ss-action-btn"
+                          onClick={() => setViewSource(src)}
+                        >
+                          View
+                        </button>
+                        {src.isActive && (
+                          <button
+                            className="ss-action-btn ss-action-btn--danger"
+                            onClick={() => handleDeactivate(src)}
+                            disabled={deactivating === src.id}
+                          >
+                            {deactivating === src.id ? '…' : 'Deactivate'}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
@@ -307,17 +385,36 @@ export default function SourceSystems() {
                 </div>
                 <div className="ss-drawer__field">
                   <span className="ss-drawer__field-label">Created Date</span>
-                  <span>{viewSource.createdDate}</span>
+                  <span className="ss-drawer__field-value">{viewSource.createdDate}</span>
+                </div>
+                <div className="ss-drawer__field">
+                  <span className="ss-drawer__field-label">Last Updated</span>
+                  <span className="ss-drawer__field-value">{viewSource.updatedDate}</span>
+                </div>
+                <div className="ss-drawer__field">
+                  <span className="ss-drawer__field-label">Active</span>
+                  <span className="ss-drawer__field-value">{viewSource.isActive ? 'Yes' : 'No'}</span>
                 </div>
               </div>
               <div className="ss-drawer__section">
                 <span className="ss-drawer__section-title">Supported Entities</span>
                 <div className="ss-entity-tags">
-                  {viewSource.supportedEntities.map(e => (
-                    <span key={e} className="ss-entity-tag">{e}</span>
-                  ))}
+                  {viewSource.supportedEntities.length === 0
+                    ? <span className="ss-conn-type">None configured</span>
+                    : viewSource.supportedEntities.map(e => (
+                        <span key={e} className="ss-entity-tag">{e}</span>
+                      ))
+                  }
                 </div>
               </div>
+              {viewSource.configJson && Object.keys(viewSource.configJson).length > 0 && (
+                <div className="ss-drawer__section">
+                  <span className="ss-drawer__section-title">Connection Config</span>
+                  <pre style={{ fontSize: '12px', color: 'var(--text-secondary)', background: 'var(--surface-2)', padding: '10px', borderRadius: '6px', overflowX: 'auto', margin: 0 }}>
+                    {JSON.stringify(viewSource.configJson, null, 2)}
+                  </pre>
+                </div>
+              )}
             </div>
           </div>
         </div>
