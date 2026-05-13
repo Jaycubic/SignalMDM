@@ -92,8 +92,6 @@ if (typeof document !== 'undefined' && !document.getElementById('rsm-styles')) {
 }
 
 /* ─── Types & constants ──────────────────────────────────────── */
-type ConnectionType = 'API' | 'FILE_UPLOAD' | 'DATABASE' | 'SFTP' | 'STREAM' | 'MANUAL';
-type SourceType = 'CRM' | 'ERP' | 'FINANCE' | 'HRMS' | 'SCM' | 'OTHER_CORE_SYSTEM';
 type EntityType = 'CUSTOMER' | 'SUPPLIER' | 'PRODUCT' | 'ACCOUNT' | 'ASSET' | 'LOCATION';
 
 interface PriorityRow { attribute: string; priority: number }
@@ -247,7 +245,7 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
                   <label htmlFor="rsm-source-type" className="rsm-label">Source Type <span className="rsm-required">*</span></label>
                   <select id="rsm-source-type" className="rsm-select" value={sourceType} onChange={e => setSourceType(e.target.value as SourceType)}>
                     <option value="">— Select type —</option>
-                    {(['CRM', 'ERP', 'DATABASE', 'FILE', 'API', 'STREAMING', 'OTHER'] as const).map(t => (
+                    {(['CRM', 'ERP', 'DATABASE', 'FILE', 'API', 'STREAMING', 'OTHER'] as SourceType[]).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>

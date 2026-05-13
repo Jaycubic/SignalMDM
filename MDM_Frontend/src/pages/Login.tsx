@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authService, type AdminProfile } from '../services/authService';
+import { authService } from '../services/authService';
 import { useAuth } from '../context/AuthContext';
 import '../styles/theme.css';
 
@@ -159,7 +159,7 @@ export default function Login() {
   const [totpUri,     setTotpUri]     = useState('');
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState('');
-  const [resendKey,   setResendKey]   = useState(0); // bump to reset countdown
+  const [,           setResendKey]   = useState(0); // bump to reset countdown
   const countdown = useCountdown(60);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 

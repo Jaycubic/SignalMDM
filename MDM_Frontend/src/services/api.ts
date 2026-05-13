@@ -25,12 +25,17 @@ export interface StandardResponse<T = unknown> {
 
 // ─── Typed API error ───────────────────────────────────────────────────────
 export class ApiError extends Error {
+  public readonly status: number;
+  public readonly errors: string[];
+
   constructor(
     message: string,
-    public readonly status: number,
-    public readonly errors: string[] = [],
+    status: number,
+    errors: string[] = [],
   ) {
     super(message);
+    this.status = status;
+    this.errors = errors;
     this.name = 'ApiError';
   }
 }
