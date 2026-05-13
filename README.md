@@ -65,7 +65,18 @@ pg_restore -U postgres -d SignalMDM "d:\SignalMDM\MDM_DataLayer\SignalMDM.sql"
 psql -U postgres -d SignalMDM -f "d:\SignalMDM\MDM_DataLayer\SignalMDM.sql"
 ```
 
-### 1.4 Database Tables
+### 1.4 Setup Platform Administrator
+A dedicated table handles global platform-level access. You **must** run this script to be able to log in:
+
+```powershell
+psql -U postgres -d SignalMDM -f "d:\SignalMDM\MDM_Backend\scripts\platform_admin_setup.sql"
+```
+
+**Initial Credentials:**
+- **Email:** `admin@signalmdm.com`
+- **Password:** `Admin@Signal123`
+
+### 1.5 Database Tables
 
 The schema creates the following tables:
 
@@ -96,16 +107,14 @@ The schema creates the following tables:
 | `entity_signal` | Signal events attached to entities |
 | `signal_stream_buffer` | Incoming signal buffer before processing |
 
-**Phase 1 — Ingestion Pipeline** *(created automatically by SQLAlchemy on startup)*
-| Table | Purpose |
-|-------|---------|
-| `source_systems` | Registered data sources (CRM, ERP, etc.) |
-| `ingestion_runs` | Upload sessions with state machine tracking |
-| `file_uploads` | File metadata (name, path, size, checksum) |
-| `raw_records` | Verbatim row data, immutable after insert |
 | `staging_entities` | Processed records ready for mapping |
 
-> **Note:** The 5 Phase 1 ingestion tables are **auto-created by SQLAlchemy** when the backend starts (`Base.metadata.create_all()`). You do not need to add them to the SQL dump manually.
+**Platform / Security Layer**
+| Table | Purpose |
+|-------|---------|
+| `platform_admin` | Global super-admins (separate from tenant-scoped users) |
+
+> **Note:** The 5 ingestion tables are **auto-created** by SQLAlchemy. However, the `platform_admin` table and its seed data must be created manually using the script provided in `MDM_Backend/scripts/`.
 
 ---
 
@@ -225,6 +234,15 @@ TOKEN_ENCRYPTION_KEY=a3f1b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e
 # ── Application ───────────────────────────────────────────────────────────────
 APP_ENV=development
 UPLOAD_DIR=storage/uploads
+
+# ── SMTP Configuration (For OTP Delivery) ─────────────────────
+# Replace with your actual SMTP details to receive 2FA codes
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASSWORD=your_app_password
+SMTP_FROM=no-reply@signalmdm.com
+SMTP_USE_TLS=True
 ```
 
 > [!IMPORTANT]
@@ -350,11 +368,11 @@ VITE_API_BASE_URL=http://localhost:8000/api/v1
 VITE_TOKEN_ENCRYPTION_KEY=a3f1b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2
 ```
 
-Install required security packages:
+Install required security and UI packages:
 
 ```powershell
-npm install crypto-js axios qrcode
-npm install --save-dev @types/crypto-js @types/qrcode
+npm install axios crypto-js js-cookie qrcode @fingerprintjs/fingerprintjs
+npm install --save-dev @types/crypto-js @types/js-cookie @types/qrcode
 ```
 
 Start the dev server:
