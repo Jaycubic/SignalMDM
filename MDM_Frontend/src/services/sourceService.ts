@@ -3,19 +3,10 @@
  * ------------------------------
  * Service layer for Source System API endpoints.
  *
- * Endpoints consumed:
- *   POST   /api/v1/sources/register           → registerSource()
- *   GET    /api/v1/sources/?skip&limit         → listSources()
- *   GET    /api/v1/sources/{source_id}         → getSource()
- *   DELETE /api/v1/sources/{source_id}         → deactivateSource()  (admin only)
- *
- * Type mapping:
- *   Backend SourceSystemRead  ←→  Frontend SourceRecord
- *
- * Enum alignment (must match backend signalmdm/enums.py):
- *   SourceTypeEnum     : CRM | ERP | DATABASE | FILE | API | STREAMING | OTHER
- *   ConnectionTypeEnum : CSV | JSON | REST_API | JDBC | SFTP | S3 | OTHER
- *   StatusEnum         : ACTIVE | SUSPENDED | ARCHIVED
+ * Integrated with the SignalMDM backend:
+ *   - Handles AES-encrypted JWT via httpOnly cookies.
+ *   - Sends X-Device-ID for fingerprint validation.
+ *   - Maps backend models (SourceSystemRead) to frontend display records.
  */
 
 import { api, ApiError } from './api';
@@ -23,7 +14,8 @@ import { api, ApiError } from './api';
 // ─── Re-export for consumers ───────────────────────────────────────────────
 export { ApiError };
 
-// ─── Backend enum constants ────────────────────────────────────────────────
+// ─── Backend enum constants (mirrors signalmdm/enums.py) ───────────────────
+
 export const SOURCE_TYPES = [
   'CRM', 'ERP', 'DATABASE', 'FILE', 'API', 'STREAMING', 'OTHER',
 ] as const;
@@ -34,7 +26,18 @@ export const CONNECTION_TYPES = [
 ] as const;
 export type ConnectionType = typeof CONNECTION_TYPES[number];
 
+export const ENTITY_TYPES = [
+  'CUSTOMER', 'PRODUCT', 'SUPPLIER', 'EMPLOYEE', 'LOCATION', 'ACCOUNT', 'ASSET', 'OTHER',
+] as const;
+export type EntityType = typeof ENTITY_TYPES[number];
+
+export const STATUS_ENUM = [
+  'ACTIVE', 'SUSPENDED', 'ARCHIVED',
+] as const;
+export type StatusType = typeof STATUS_ENUM[number];
+
 // ─── Backend response shape (SourceSystemRead) ────────────────────────────
+
 export interface SourceSystemRead {
   source_system_id: string;
   tenant_id: string;
@@ -50,6 +53,7 @@ export interface SourceSystemRead {
 }
 
 // ─── Frontend display model ────────────────────────────────────────────────
+
 /**
  * SourceRecord is the shape used throughout the frontend UI.
  * It is derived from SourceSystemRead and hides backend naming conventions.
@@ -69,11 +73,7 @@ export interface SourceRecord {
 }
 
 // ─── Create request payload ────────────────────────────────────────────────
-/**
- * Maps to backend SourceSystemCreate.
- * source_code MUST be a lowercase slug: ^[a-z0-9_\-]+$
- * supported_entities and priority_config live inside config_json.
- */
+
 export interface SourceSystemCreatePayload {
   source_name: string;
   source_code: string;
@@ -83,6 +83,7 @@ export interface SourceSystemCreatePayload {
 }
 
 // ─── Mapping helpers ───────────────────────────────────────────────────────
+
 function mapStatus(
   isActive: boolean,
   backendStatus: string,
@@ -95,6 +96,7 @@ function mapStatus(
 
 function toSourceRecord(raw: SourceSystemRead): SourceRecord {
   const cfg = raw.config_json ?? {};
+  // supported_entities is typically stored in config_json in Phase 1
   const supportedEntities = Array.isArray(cfg['supported_entities'])
     ? (cfg['supported_entities'] as string[])
     : [];
@@ -115,6 +117,7 @@ function toSourceRecord(raw: SourceSystemRead): SourceRecord {
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────
+
 export const sourceService = {
   /**
    * Fetch all active source systems for the authenticated tenant.
@@ -140,9 +143,6 @@ export const sourceService = {
   /**
    * Register a new source system.
    * POST /api/v1/sources/register
-   *
-   * Note: source_code is sent as-is (must already be lowercase slug).
-   *       supported_entities and priority_config are packed into config_json.
    */
   async registerSource(payload: SourceSystemCreatePayload): Promise<SourceRecord> {
     const res = await api.post<SourceSystemRead>('/sources/register', payload);

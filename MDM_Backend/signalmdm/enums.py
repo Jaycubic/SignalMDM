@@ -41,6 +41,8 @@ class EntityTypeEnum(str, Enum):
     SUPPLIER  = "SUPPLIER"
     EMPLOYEE  = "EMPLOYEE"
     LOCATION  = "LOCATION"
+    ACCOUNT   = "ACCOUNT"
+    ASSET     = "ASSET"
     OTHER     = "OTHER"
 
 

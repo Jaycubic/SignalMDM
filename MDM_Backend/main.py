@@ -129,6 +129,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",   # Vite dev server
         "http://localhost:3000",   # Next.js dev server
+        "http://localhost:3030",   # New Production Express server
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -142,7 +143,7 @@ app.add_middleware(
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    return JSONResponse(
+    response = JSONResponse(
         status_code=exc.status_code,
         content={
             "success": False,
@@ -151,10 +152,20 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "errors": [exc.detail],
         },
     )
+    # Add CORS headers manually to error responses so they aren't masked by CORS errors
+    origin = request.headers.get("origin")
+    if origin in ["http://localhost:3030", "http://localhost:5173", "http://localhost:3000"]:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(
+    import traceback
+    print(f"[ERROR] Unhandled exception: {exc}")
+    traceback.print_exc()
+
+    response = JSONResponse(
         status_code=500,
         content={
             "success": False,
@@ -163,6 +174,11 @@ async def global_exception_handler(request: Request, exc: Exception):
             "errors": [str(exc)],
         },
     )
+    origin = request.headers.get("origin")
+    if origin in ["http://localhost:3030", "http://localhost:5173", "http://localhost:3000"]:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 
 # ---------------------------------------------------------------------------

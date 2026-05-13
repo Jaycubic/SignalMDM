@@ -368,18 +368,52 @@ VITE_API_BASE_URL=http://localhost:8000/api/v1
 VITE_TOKEN_ENCRYPTION_KEY=a3f1b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2
 ```
 
-Install required security and UI packages:
+Install required security, UI, and server packages:
 
 ```powershell
-npm install axios crypto-js js-cookie qrcode @fingerprintjs/fingerprintjs
-npm install --save-dev @types/crypto-js @types/js-cookie @types/qrcode
+# Core Frontend Dependencies
+npm install react react-dom react-router-dom lucide-react
+
+# Security & Utilities
+npm install crypto-js js-cookie qrcode @fingerprintjs/fingerprintjs
+
+# Production Server Dependencies (REQUIRED for serverClient.js)
+npm install express helmet
 ```
 
-Start the dev server:
+Install type definitions:
 
 ```powershell
-npm run dev
+npm install --save-dev @types/crypto-js @types/js-cookie @types/qrcode @types/node
 ```
+
+### 7.3 Create the Production Build
+
+Before running the production server, you must compile the React application:
+
+```powershell
+npm run build
+```
+This generates the `dist/` folder.
+
+### 7.4 Production Frontend Server (`serverClient.js`)
+
+For production-like environments or security testing (CORS/CSP), use the dedicated Express server instead of `vite dev`.
+
+**Key Features:**
+- Strict **Content Security Policy (CSP)** via Helmet.
+- Handles Single Page Application (SPA) routing.
+- Masks the backend origin behind a secure `connect-src` policy.
+
+**Running the Production Server:**
+```powershell
+# 1. Ensure dependencies are installed
+npm install
+
+# 2. Start the server
+npm run serve
+```
+The server will be available at `http://localhost:3030`.
 
 ---
 
@@ -401,9 +435,14 @@ python -m uvicorn main:app --reload --port 8000
 cd d:\SignalMDM\MDM_Backend
 python -m celery -A signalmdm.workers.celery_app worker --loglevel=info --pool=solo
 
-# Terminal 5 — Frontend
+# Terminal 5 — Frontend (Development Mode)
 cd d:\SignalMDM\MDM_Frontend
 npm run dev
+
+# Terminal 6 — Frontend (Production Mode / CSP Testing)
+# Note: Requires 'npm run build' first
+cd d:\SignalMDM\MDM_Frontend
+npm run serve
 ```
 
 ---

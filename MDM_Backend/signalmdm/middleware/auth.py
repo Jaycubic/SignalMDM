@@ -54,7 +54,7 @@ class TokenPayload(BaseModel):
     """Decoded, validated JWT payload — injected via Depends(require_auth)."""
 
     user_id:   str
-    tenant_id: uuid.UUID
+    tenant_id: str  # Can be UUID string or "platform"
     role:      str
     fp_hash:   str
     raw_jwt:   str   # kept for revocation (logout endpoint)
@@ -162,7 +162,7 @@ async def require_auth(
     # --- 6. Attach to request state + return --------------------------------
     token_payload = TokenPayload(
         user_id=user_id,
-        tenant_id=uuid.UUID(tenant_id),
+        tenant_id=tenant_id,
         role=role,
         fp_hash=fp_hash,
         raw_jwt=raw_jwt,

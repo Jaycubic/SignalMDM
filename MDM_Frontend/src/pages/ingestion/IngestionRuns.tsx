@@ -1,231 +1,7 @@
 // MDM_Frontend/src/pages/ingestion/IngestionRuns.tsx
-import { useState, useEffect, useRef } from "react";
-
-const CSS = `
-:root {
-  --navy-900:#0d1b35;
-  --navy-800:#1a2d4f;
-  --blue-600:#1557ff;
-  --blue-500:#2563eb;
-  --blue-400:#3b82f6;
-  --blue-100:#eff6ff;
-  --green-500:#22c55e;
-  --green-100:#dcfce7;
-  --red-500:#ef4444;
-  --red-100:#fee2e2;
-  --amber-500:#f59e0b;
-  --amber-100:#fef3c7;
-  --purple-500:#8b5cf6;
-  --purple-100:#f5f3ff;
-  --cyan-500:#06b6d4;
-  --cyan-100:#ecfeff;
-  --gray-400:#94a3b8;
-  --gray-100:#f1f5f9;
-  --text-primary:#0f172a;
-  --text-secondary:#475569;
-  --text-muted:#94a3b8;
-  --border-light:#e2e8f0;
-  --border-muted:#cbd5e1;
-  --surface-1:#f8fafc;
-  --surface-2:#f1f5f9;
-  --surface-3:#e2e8f0;
-  --shadow-sm:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
-  --shadow-xl:0 20px 60px rgba(0,0,0,.18),0 8px 24px rgba(0,0,0,.12);
-  --radius-sm:6px;
-  --radius-md:10px;
-  --radius-lg:14px;
-  --radius-xl:18px;
-}
-
-/* ── Page layout ──────────────────────────────────────────── */
-.ir-page{display:flex;flex-direction:column;gap:20px;max-width:1400px;padding:24px;font-family:'Geist','DM Sans',system-ui,sans-serif}
-.ir-page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
-.ir-page-title{font-size:22px;font-weight:700;color:var(--text-primary);letter-spacing:-.3px;margin:0 0 3px}
-.ir-page-subtitle{font-size:13px;color:var(--text-secondary)}
-.ir-page-header__actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-
-/* ── Buttons ──────────────────────────────────────────────── */
-.ir-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;transition:background .15s,box-shadow .15s,transform .12s;white-space:nowrap;cursor:pointer;font-family:inherit;border:none}
-.ir-btn:active{transform:scale(.97)}
-.ir-btn--primary{background:var(--blue-600);color:#fff;box-shadow:0 2px 8px rgba(21,87,255,.28)}
-.ir-btn--primary:hover{background:#0f49e0;box-shadow:0 4px 14px rgba(21,87,255,.38)}
-.ir-btn--ghost{background:#fff;color:var(--text-secondary);border:1px solid var(--border-light)}
-.ir-btn--ghost:hover{background:var(--surface-2);color:var(--text-primary)}
-
-/* ── Auto-refresh badge ───────────────────────────────────── */
-.ir-refresh-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);background:var(--surface-1);border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:6px 12px}
-.ir-refresh-dot{width:7px;height:7px;border-radius:50%;background:var(--green-500);animation:ir-pulse 1.6s ease-in-out infinite}
-@keyframes ir-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
-
-/* ── Summary Cards ────────────────────────────────────────── */
-.ir-summary-row{display:flex;gap:14px;flex-wrap:wrap}
-.ir-summary-card{background:#fff;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px 22px;display:flex;flex-direction:column;gap:3px;min-width:130px;box-shadow:var(--shadow-sm);border-top:3px solid var(--blue-400)}
-.ir-summary-card--blue{border-top-color:var(--blue-500)}
-.ir-summary-card--green{border-top-color:var(--green-500)}
-.ir-summary-card--red{border-top-color:var(--red-500)}
-.ir-summary-card--amber{border-top-color:var(--amber-500)}
-.ir-summary-card--purple{border-top-color:var(--purple-500)}
-.ir-summary-card--cyan{border-top-color:var(--cyan-500)}
-.ir-summary-card__value{font-size:28px;font-weight:700;color:var(--text-primary);line-height:1}
-.ir-summary-card__label{font-size:11.5px;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
-
-/* ── Table Card ───────────────────────────────────────────── */
-.ir-table-card{background:#fff;border:1px solid var(--border-light);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:hidden}
-.ir-table-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border-light);flex-wrap:wrap}
-.ir-search-wrap{display:flex;align-items:center;gap:8px;background:var(--surface-1);border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:0 12px;min-width:220px}
-.ir-search-icon{font-size:13px;color:var(--text-muted)}
-.ir-search-input{border:none;background:transparent;font-size:13px;padding:8px 0;color:var(--text-primary);width:100%;font-family:inherit}
-.ir-search-input::placeholder{color:var(--text-muted)}
-.ir-search-input:focus{outline:none}
-.ir-filter-row{display:flex;align-items:center;gap:10px}
-.ir-select{border:1px solid var(--border-light);border-radius:var(--radius-sm);background:var(--surface-1);padding:7px 10px;font-size:13px;color:var(--text-primary);cursor:pointer;font-family:inherit}
-.ir-select:focus{border-color:var(--blue-400);outline:none}
-.ir-count-label{font-size:12px;color:var(--text-muted);white-space:nowrap;padding-left:6px}
-.ir-table-wrap{overflow-x:auto}
-.ir-table{width:100%;border-collapse:collapse;font-size:13px}
-.ir-table thead th{background:var(--surface-1);color:var(--text-muted);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;padding:11px 16px;text-align:left;border-bottom:1px solid var(--border-light);white-space:nowrap}
-.ir-table-row{border-bottom:1px solid var(--surface-2);transition:background .12s;cursor:pointer}
-.ir-table-row:last-child{border-bottom:none}
-.ir-table-row:hover{background:var(--surface-1)}
-.ir-table td{padding:12px 16px;vertical-align:middle;color:var(--text-primary)}
-.ir-table-empty{text-align:center;padding:60px 16px !important;color:var(--text-muted)}
-.ir-table-empty span{font-size:32px;display:block;margin-bottom:8px}
-.ir-table-empty p{font-size:14px}
-
-/* ── Run ID cell ──────────────────────────────────────────── */
-.ir-run-id{font-family:'Courier New',monospace;font-size:11.5px;background:var(--surface-2);color:var(--text-secondary);padding:3px 7px;border-radius:4px;border:1px solid var(--border-light);white-space:nowrap}
-
-/* ── Source cell ──────────────────────────────────────────── */
-.ir-source-cell{display:flex;align-items:center;gap:8px}
-.ir-source-avatar{width:28px;height:28px;border-radius:6px;background:var(--blue-100);color:var(--blue-500);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(37,99,235,.15)}
-.ir-source-name{font-weight:500;font-size:13px}
-
-/* ── Entity chip ──────────────────────────────────────────── */
-.ir-entity-chip{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:4px;background:var(--blue-100);color:var(--blue-500);border:1px solid rgba(37,99,235,.18);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
-
-/* ── Type chips ───────────────────────────────────────────── */
-.ir-run-type{font-size:11px;font-weight:600;padding:3px 8px;border-radius:5px;background:var(--navy-800);color:rgba(255,255,255,.75);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
-
-/* ── Status badges ────────────────────────────────────────── */
-.ir-status{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:99px;white-space:nowrap;letter-spacing:.2px}
-.ir-status::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
-.ir-status--CREATED{background:#f1f5f9;color:#64748b}
-.ir-status--RUNNING{background:var(--blue-100);color:var(--blue-500)}
-.ir-status--RUNNING::before{animation:ir-pulse 1s ease-in-out infinite}
-.ir-status--RAW_LOADED{background:var(--cyan-100);color:var(--cyan-500)}
-.ir-status--STAGING_CREATED{background:var(--purple-100);color:var(--purple-500)}
-.ir-status--FAILED{background:var(--red-100);color:#dc2626}
-.ir-status--COMPLETED{background:var(--green-100);color:#16a34a}
-
-/* ── Record count cells ───────────────────────────────────── */
-.ir-count-cell{font-size:13px;font-weight:600;color:var(--text-primary)}
-.ir-count-cell--failed{color:#dc2626}
-.ir-count-cell--muted{color:var(--text-muted)}
-
-/* ── Timestamp ────────────────────────────────────────────── */
-.ir-ts{color:var(--text-secondary);font-size:12.5px;white-space:nowrap}
-.ir-ts-na{color:var(--text-muted);font-size:12px}
-
-/* ── Action buttons ───────────────────────────────────────── */
-.ir-action-row{display:flex;gap:6px}
-.ir-action-btn{padding:5px 11px;border-radius:var(--radius-sm);font-size:12px;font-weight:500;background:var(--surface-2);color:var(--text-secondary);border:1px solid var(--border-light);transition:background .13s,color .13s;white-space:nowrap;cursor:pointer;font-family:inherit}
-.ir-action-btn:hover{background:var(--surface-3);color:var(--text-primary)}
-.ir-action-btn--primary{background:var(--blue-100);color:var(--blue-500);border-color:rgba(37,99,235,.2)}
-.ir-action-btn--primary:hover{background:rgba(37,99,235,.18)}
-.ir-action-btn--danger{background:var(--red-100);color:#dc2626;border-color:rgba(239,68,68,.2)}
-.ir-action-btn--danger:hover{background:rgba(239,68,68,.12)}
-
-/* ══ START INGESTION MODAL ══════════════════════════════════ */
-.sim-overlay{position:fixed;inset:0;background:rgba(6,12,30,.55);backdrop-filter:blur(3px);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px;animation:sim-fade-in .18s ease}
-@keyframes sim-fade-in{from{opacity:0}to{opacity:1}}
-.sim-modal{background:#fff;border-radius:var(--radius-xl);width:520px;max-width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:var(--shadow-xl);overflow:hidden;animation:sim-slide-up .22s ease}
-@keyframes sim-slide-up{from{transform:translateY(24px);opacity:0}to{transform:translateY(0);opacity:1}}
-.sim-header{background:var(--navy-900);padding:22px 24px 18px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-shrink:0}
-.sim-header__title{font-size:17px;font-weight:700;color:#fff;margin:0 0 4px}
-.sim-header__sub{font-size:12px;color:rgba(255,255,255,.45)}
-.sim-close{background:rgba(255,255,255,.1);color:rgba(255,255,255,.6);border:none;width:30px;height:30px;border-radius:6px;font-size:13px;cursor:pointer;transition:background .13s;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.sim-close:hover{background:rgba(255,255,255,.18);color:#fff}
-.sim-body{flex:1;overflow-y:auto;padding:22px 24px}
-.sim-section{display:flex;flex-direction:column;gap:16px}
-.sim-field-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.sim-field{display:flex;flex-direction:column;gap:5px}
-.sim-field--full{grid-column:1/-1}
-.sim-label{font-size:12px;font-weight:600;color:var(--text-secondary);display:flex;align-items:center;gap:5px}
-.sim-required{color:var(--red-500);font-size:13px;line-height:1}
-.sim-input,.sim-select{border:1px solid var(--border-muted);border-radius:var(--radius-sm);padding:9px 11px;font-size:13px;color:var(--text-primary);background:#fff;transition:border-color .15s,box-shadow .15s;width:100%;font-family:inherit}
-.sim-input:focus,.sim-select:focus{border-color:var(--blue-400);box-shadow:0 0 0 3px rgba(59,130,246,.12);outline:none}
-.sim-select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394a3b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:30px}
-.sim-field--error .sim-input,.sim-field--error .sim-select{border-color:var(--red-500)}
-.sim-error-msg{font-size:11.5px;color:var(--red-500);font-weight:500}
-.sim-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 24px;border-top:1px solid var(--border-light);background:var(--surface-1);flex-shrink:0}
-.sim-footer__right{display:flex;align-items:center;gap:10px}
-.sim-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:var(--radius-sm);font-size:13px;font-weight:600;transition:background .15s,transform .12s;cursor:pointer;white-space:nowrap;border:none;font-family:inherit}
-.sim-btn:active{transform:scale(.97)}
-.sim-btn--primary{background:var(--blue-600);color:#fff;box-shadow:0 2px 8px rgba(21,87,255,.28)}
-.sim-btn--primary:hover{background:#0f49e0}
-.sim-btn--ghost{background:transparent;color:var(--text-muted)}
-.sim-btn--ghost:hover{color:var(--text-primary)}
-
-/* ══ RUN DETAILS DRAWER ════════════════════════════════════ */
-.ir-drawer-overlay{position:fixed;inset:0;background:rgba(6,12,25,.45);z-index:200;display:flex;justify-content:flex-end;backdrop-filter:blur(2px);animation:irFadeOverlay .18s ease}
-@keyframes irFadeOverlay{from{opacity:0}to{opacity:1}}
-.ir-drawer{width:440px;max-width:95vw;background:#fff;height:100%;display:flex;flex-direction:column;box-shadow:var(--shadow-xl);animation:irSlideDrawer .22s ease}
-@keyframes irSlideDrawer{from{transform:translateX(60px);opacity:0}to{transform:translateX(0);opacity:1}}
-.ir-drawer__header{display:flex;align-items:flex-start;justify-content:space-between;padding:20px 24px 16px;border-bottom:1px solid var(--border-light);background:var(--navy-900);gap:12px}
-.ir-drawer__title{font-size:15px;font-weight:700;color:#fff;margin:0 0 4px}
-.ir-drawer__sub{font-size:11px;color:rgba(255,255,255,.4);font-family:'Courier New',monospace}
-.ir-drawer__close{background:rgba(255,255,255,.1);color:rgba(255,255,255,.65);border:none;width:30px;height:30px;border-radius:6px;font-size:13px;cursor:pointer;transition:background .13s;flex-shrink:0;display:flex;align-items:center;justify-content:center}
-.ir-drawer__close:hover{background:rgba(255,255,255,.18);color:#fff}
-.ir-drawer__body{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:0}
-
-/* drawer tabs */
-.ir-drawer-tabs{display:flex;border-bottom:1px solid var(--border-light);background:var(--surface-1);flex-shrink:0}
-.ir-drawer-tab{padding:10px 18px;font-size:12.5px;font-weight:500;color:var(--text-muted);cursor:pointer;border-bottom:2px solid transparent;transition:color .14s,border-color .14s;white-space:nowrap;background:none;border-top:none;border-left:none;border-right:none;font-family:inherit}
-.ir-drawer-tab:hover{color:var(--text-secondary)}
-.ir-drawer-tab--active{color:var(--blue-600);border-bottom-color:var(--blue-500);font-weight:600}
-
-.ir-drawer__content{padding:20px 24px;display:flex;flex-direction:column;gap:18px}
-
-/* drawer grid */
-.ir-drawer__grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.ir-drawer__field{display:flex;flex-direction:column;gap:5px}
-.ir-drawer__field-label{font-size:10.5px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px}
-.ir-drawer__field-value{font-size:13px;color:var(--text-primary)}
-
-/* record count row */
-.ir-drawer__counts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.ir-drawer__count-card{background:var(--surface-1);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px 14px;display:flex;flex-direction:column;gap:3px}
-.ir-drawer__count-val{font-size:22px;font-weight:700;color:var(--text-primary);line-height:1}
-.ir-drawer__count-val--failed{color:#dc2626}
-.ir-drawer__count-val--loaded{color:#16a34a}
-.ir-drawer__count-lbl{font-size:10.5px;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
-
-/* timeline */
-.ir-timeline{display:flex;flex-direction:column;gap:0}
-.ir-timeline__item{display:flex;gap:12px;position:relative}
-.ir-timeline__item::before{content:'';position:absolute;left:9px;top:26px;bottom:-4px;width:1px;background:var(--border-light)}
-.ir-timeline__item:last-child::before{display:none}
-.ir-timeline__dot{width:20px;height:20px;border-radius:50%;background:var(--blue-100);border:2px solid var(--blue-400);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:3px;font-size:9px;color:var(--blue-500);font-weight:700;z-index:1}
-.ir-timeline__dot--done{background:var(--green-100);border-color:var(--green-500);color:#16a34a}
-.ir-timeline__dot--fail{background:var(--red-100);border-color:var(--red-500);color:#dc2626}
-.ir-timeline__dot--active{background:var(--blue-100);border-color:var(--blue-500);animation:ir-pulse 1.4s ease-in-out infinite}
-.ir-timeline__body{padding-bottom:16px;flex:1}
-.ir-timeline__label{font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:2px}
-.ir-timeline__ts{font-size:11.5px;color:var(--text-muted)}
-
-/* error summary */
-.ir-error-list{display:flex;flex-direction:column;gap:8px}
-.ir-error-item{background:var(--red-100);border:1px solid rgba(239,68,68,.2);border-radius:var(--radius-sm);padding:10px 13px;font-size:12.5px;color:#b91c1c;border-left:3px solid var(--red-500)}
-.ir-error-item__code{font-family:'Courier New',monospace;font-size:11px;font-weight:700;margin-bottom:2px;color:#991b1b}
-.ir-no-errors{font-size:13px;color:var(--text-muted);text-align:center;padding:20px 0}
-`;
-
-if (typeof document !== "undefined" && !document.getElementById("ir-styles")) {
-    const el = document.createElement("style");
-    el.id = "ir-styles";
-    el.textContent = CSS;
-    document.head.appendChild(el);
-}
+import React, { useState, useEffect, useRef } from "react";
+import '../../styles/theme.css';
+import '../../styles/IngestionRuns.css';
 
 /* ═══════════════════════════════════════════════════════════════
    TYPES
@@ -318,7 +94,7 @@ const RUN_ERRORS: Partial<Record<RunStatus, RunError[]>> = {
 };
 
 /* ─── Sub-components ────────────────────────────────────────── */
-function StatusBadge({ status }: { status: RunStatus }): JSX.Element {
+function StatusBadge({ status }: { status: RunStatus }): React.ReactElement {
     return (
         <span className={`ir-status ir-status--${status}`}>
             {STATUS_LABEL[status] || status}
@@ -331,7 +107,7 @@ interface ProgressBarProps {
     total: number;
 }
 
-function ProgressBar({ loaded, total }: ProgressBarProps): JSX.Element {
+function ProgressBar({ loaded, total }: ProgressBarProps): React.ReactElement {
     const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
     return (
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 100 }}>
@@ -351,7 +127,7 @@ interface StartIngestionModalProps {
     onStart: (data: StartIngestionData) => void;
 }
 
-function StartIngestionModal({ onClose, onStart }: StartIngestionModalProps): JSX.Element {
+function StartIngestionModal({ onClose, onStart }: StartIngestionModalProps): React.ReactElement {
     const [source, setSource] = useState<string>("");
     const [entity, setEntity] = useState<string>("");
     const [runType, setRunType] = useState<string>("");
@@ -446,7 +222,7 @@ interface RunDetailsDrawerProps {
     onClose: () => void;
 }
 
-function RunDetailsDrawer({ run, onClose }: RunDetailsDrawerProps): JSX.Element {
+function RunDetailsDrawer({ run, onClose }: RunDetailsDrawerProps): React.ReactElement {
     const [tab, setTab] = useState<DrawerTab>("overview");
     const timeline: TimelineItem[] = RUN_TIMELINES[run.status] || RUN_TIMELINES["CREATED"];
     const errors: RunError[] = RUN_ERRORS[run.status] || [];
@@ -564,14 +340,14 @@ function RunDetailsDrawer({ run, onClose }: RunDetailsDrawerProps): JSX.Element 
 /* ═══════════════════════════════════════════════════════════════
    INGESTION RUNS PAGE
 ═══════════════════════════════════════════════════════════════ */
-export default function IngestionRuns(): JSX.Element {
+function IngestionRuns(): React.ReactElement {
     const [runs, setRuns] = useState<IngestionRun[]>(MOCK_RUNS);
     const [showModal, setShowModal] = useState<boolean>(false);
     const [viewRun, setViewRun] = useState<IngestionRun | null>(null);
     const [search, setSearch] = useState<string>("");
     const [filterStatus, setFilterStatus] = useState<string>("ALL");
     const [filterSource, setFilterSource] = useState<string>("ALL");
-    const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+    const [_lastRefresh, setLastRefresh] = useState<Date>(new Date());
     const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     /* Auto-refresh every 10s for running jobs */
@@ -737,3 +513,5 @@ export default function IngestionRuns(): JSX.Element {
         </div>
     );
 }
+
+export default IngestionRuns;

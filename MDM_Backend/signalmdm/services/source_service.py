@@ -12,7 +12,7 @@ Rules:
 from __future__ import annotations
 
 import uuid
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -25,13 +25,30 @@ import signalmdm.services.audit_service as audit_svc
 
 class SourceService:
     # ------------------------------------------------------------------
+    # Helper
+    # ------------------------------------------------------------------
+    def _parse_tenant(self, tenant_id: Union[str, uuid.UUID]) -> Optional[uuid.UUID]:
+        """Convert string/uuid to UUID object. Returns None if 'platform'."""
+        if tenant_id == "platform":
+            return None
+        if isinstance(tenant_id, uuid.UUID):
+            return tenant_id
+        try:
+            return uuid.UUID(tenant_id)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid tenant_id format: {tenant_id}",
+            )
+
+    # ------------------------------------------------------------------
     # Create
     # ------------------------------------------------------------------
 
     def create_source(
         self,
         db: Session,
-        tenant_id: uuid.UUID,
+        tenant_id: Union[str, uuid.UUID],
         data: SourceSystemCreate,
         performed_by: str = "system",
     ) -> SourceSystem:
@@ -40,10 +57,20 @@ class SourceService:
 
         Raises 409 if `source_code` already exists for this tenant.
         """
+        target_uuid = self._parse_tenant(tenant_id)
+        if target_uuid is None:
+            # SuperAdmin must specify which tenant they are creating for?
+            # For now, we'll assume platform-level sources are allowed if needed,
+            # but usually they belong to a real tenant.
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="SuperAdmin must provide a specific tenant_id for registration.",
+            )
+
         existing = (
             db.query(SourceSystem)
             .filter(
-                SourceSystem.tenant_id == tenant_id,
+                SourceSystem.tenant_id == target_uuid,
                 SourceSystem.source_code == data.source_code,
             )
             .first()
@@ -56,7 +83,7 @@ class SourceService:
 
         source = SourceSystem(
             source_system_id=uuid.uuid4(),
-            tenant_id=tenant_id,
+            tenant_id=target_uuid,
             source_name=data.source_name,
             source_code=data.source_code,
             source_type=data.source_type,
@@ -68,7 +95,7 @@ class SourceService:
 
         audit_svc.log_action(
             db,
-            tenant_id=tenant_id,
+            tenant_id=target_uuid,
             entity_name="source_systems",
             entity_id=source.source_system_id,
             operation_type=OperationTypeEnum.INSERT,
@@ -92,18 +119,20 @@ class SourceService:
     def list_sources(
         self,
         db: Session,
-        tenant_id: uuid.UUID,
+        tenant_id: Union[str, uuid.UUID],
         skip: int = 0,
-        limit: int = 50,
+        limit: int = 100,
     ) -> list[SourceSystem]:
-        """Return all active source systems for the tenant."""
+        """Return all active source systems for the tenant (or all if platform)."""
+        target_uuid = self._parse_tenant(tenant_id)
+
+        query = db.query(SourceSystem).filter(SourceSystem.is_active.is_(True))
+
+        if target_uuid:
+            query = query.filter(SourceSystem.tenant_id == target_uuid)
+
         return (
-            db.query(SourceSystem)
-            .filter(
-                SourceSystem.tenant_id == tenant_id,
-                SourceSystem.is_active.is_(True),
-            )
-            .order_by(SourceSystem.created_at.desc())
+            query.order_by(SourceSystem.created_at.desc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -112,18 +141,18 @@ class SourceService:
     def get_source(
         self,
         db: Session,
-        tenant_id: uuid.UUID,
+        tenant_id: Union[str, uuid.UUID],
         source_system_id: uuid.UUID,
     ) -> SourceSystem:
         """Fetch a single source system; raise 404 if not found."""
-        source = (
-            db.query(SourceSystem)
-            .filter(
-                SourceSystem.tenant_id == tenant_id,
-                SourceSystem.source_system_id == source_system_id,
-            )
-            .first()
-        )
+        target_uuid = self._parse_tenant(tenant_id)
+
+        query = db.query(SourceSystem).filter(SourceSystem.source_system_id == source_system_id)
+
+        if target_uuid:
+            query = query.filter(SourceSystem.tenant_id == target_uuid)
+
+        source = query.first()
         if not source:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -138,19 +167,21 @@ class SourceService:
     def deactivate_source(
         self,
         db: Session,
-        tenant_id: uuid.UUID,
+        tenant_id: Union[str, uuid.UUID],
         source_system_id: uuid.UUID,
         performed_by: str = "system",
     ) -> SourceSystem:
         """Soft-deactivate a source system (is_active = False)."""
         source = self.get_source(db, tenant_id, source_system_id)
+        target_uuid = self._parse_tenant(tenant_id) or source.tenant_id
+
         old_val = {"is_active": source.is_active}
         source.is_active = False
         db.flush()
 
         audit_svc.log_action(
             db,
-            tenant_id=tenant_id,
+            tenant_id=target_uuid,
             entity_name="source_systems",
             entity_id=source.source_system_id,
             operation_type=OperationTypeEnum.UPDATE,

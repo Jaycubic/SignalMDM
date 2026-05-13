@@ -68,23 +68,52 @@ function getHeaders(extra?: Record<string, string>): Record<string, string> {
 }
 
 // ─── Core request ─────────────────────────────────────────────────────────
+// ─── Core request with automatic token refresh ─────────────────────────────
 async function request<T>(
   method: string,
   path: string,
   body?: unknown,
   extraHeaders?: Record<string, string>,
+  _isRetry = false,
 ): Promise<StandardResponse<T>> {
   const response = await fetch(`${BASE_URL}${path}`, {
     method,
     headers: getHeaders(extraHeaders),
-    credentials: 'include', // ← sends httpOnly cookies cross-origin
+    credentials: "include", // ← sends httpOnly cookies
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  // If 401 on any non-auth endpoint, redirect to login
-  if (response.status === 401 && !path.startsWith('/auth/')) {
-    window.location.href = '/login';
-    return { success: false, message: 'Session expired.', data: null, errors: [] };
+  // Handle 401 Unauthorized
+  if (response.status === 401) {
+    // If we're already on an auth path, just throw (don't refresh loop)
+    if (path.startsWith("/auth/")) {
+      const json = (await response.json()) as StandardResponse<T>;
+      throw new ApiError(json.message || "Auth failed", 401);
+    }
+
+    // Try token refresh once
+    if (!_isRetry) {
+      try {
+        console.warn(`[api] 401 on ${path} — attempting token refresh...`);
+        const refreshRes = await fetch(`${BASE_URL}/auth/refresh`, {
+          method: "POST",
+          headers: getHeaders(),
+          credentials: "include",
+        });
+
+        if (refreshRes.ok) {
+          console.info("[api] Refresh successful — retrying original request.");
+          return request<T>(method, path, body, extraHeaders, true);
+        }
+      } catch (err) {
+        console.error("[api] Refresh call failed:", err);
+      }
+    }
+
+    // If refresh failed or was already a retry, redirect to login
+    console.error("[api] Session expired. Redirecting to login.");
+    window.location.href = "/login";
+    return { success: false, message: "Session expired.", data: null, errors: [] };
   }
 
   let json: StandardResponse<T>;
@@ -93,7 +122,7 @@ async function request<T>(
   } catch {
     throw new ApiError(
       `Server returned a non-JSON response (HTTP ${response.status})`,
-      response.status,
+      response.status
     );
   }
 
@@ -101,7 +130,7 @@ async function request<T>(
     throw new ApiError(
       json?.message ?? `Request failed with status ${response.status}`,
       response.status,
-      json?.errors ?? [],
+      json?.errors ?? []
     );
   }
 
