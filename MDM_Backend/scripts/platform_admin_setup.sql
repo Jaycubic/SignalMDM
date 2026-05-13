@@ -46,8 +46,8 @@ CREATE INDEX idx_platform_admin_email    ON platform_admin (email);
 CREATE INDEX idx_platform_admin_active   ON platform_admin (is_active);
 
 -- ─── Seed: Test SuperAdmin ────────────────────────────────────
--- Credentials:  admin@signalmdm.com  /  Admin@Signal123
--- Hash generated with: python -c "import bcrypt; print(bcrypt.hashpw(b'Admin@Signal123', bcrypt.gensalt(12)).decode())"
+-- Credentials:  jofrey.joseph@flame.edu.in  /  Admin@123
+-- Hash generated with: python -c "import bcrypt; print(bcrypt.hashpw(b'Admin@123', bcrypt.gensalt(12)).decode())"
 -- Replace the hash below if you want a different password.
 INSERT INTO platform_admin (
     admin_id,
@@ -59,9 +59,9 @@ INSERT INTO platform_admin (
     two_fa_setup_complete
 ) VALUES (
     gen_random_uuid(),
-    'admin@signalmdm.com',
-    'SuperAdmin',
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGTmLwCEZxgcJsf3DeMrVUFlDIG',
+    'jofrey.joseph@flame.edu.in',
+    'Jofrey',
+    '$2b$12$egUiMGcIpkKhHkEfGdJlf.5tDFM3bxl05N6bspquBzFNigseFmXzm',
     TRUE,
     FALSE,
     FALSE
