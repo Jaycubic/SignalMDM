@@ -33,10 +33,10 @@ class AuditLog(Base):
         primary_key=True,
         default=uuid.uuid4,
     )
-    tenant_id: Mapped[uuid.UUID] = mapped_column(
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("tenant.tenant_id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     entity_name: Mapped[Optional[str]] = mapped_column(

@@ -215,6 +215,7 @@ def _issue_tokens(
         role       = "admin",
         device_id  = device_id,
         user_agent = user_agent,
+        extra_claims = {"email": admin.email},
         expires_minutes = 45,
     )
 
@@ -260,7 +261,7 @@ def _issue_tokens(
     # Non-httpOnly info cookie (JS-readable, non-sensitive)
     response.set_cookie(
         key      = "adminInfo",
-        value    = f'{{"username":"{admin.username}","email":"{admin.email}","role":"admin"}}',
+        value    = f'{{"username":"{admin.username}","email":"{admin.email}","role":"admin","tenant_id":"platform"}}',
         httponly = False,
         secure   = is_prod,
         samesite = "lax",

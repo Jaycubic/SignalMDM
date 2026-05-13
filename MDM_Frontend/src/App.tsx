@@ -7,6 +7,7 @@ import IngestionRuns from './pages/ingestion/IngestionRuns';
 import RawLanding from './pages/rawlanding/RawLanding';
 import UploadData from './pages/upload/UploadData';
 import StagingRecords from './pages/staging/StagingRecords';
+import Tenants from './pages/admin/Tenants';
 import DevSetup from './pages/DevSetup';
 import './index.css';
 
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="upload"       element={<UploadData />} />
             <Route path="raw-landing"  element={<RawLanding />} />
             <Route path="staging"      element={<StagingRecords />} />
+            <Route path="tenants"      element={<Tenants />} />
             <Route path="api-logs"     element={<Placeholder title="API Logs — Coming Soon" />} />
             <Route path="system-health" element={<Placeholder title="System Health — Coming Soon" />} />
             <Route path="dev-setup"    element={<DevSetup />} />

@@ -23,7 +23,7 @@ from signalmdm.enums import OperationTypeEnum
 def log_action(
     db: Session,
     *,
-    tenant_id: uuid.UUID,
+    tenant_id: Optional[uuid.UUID],
     entity_name: str,
     entity_id: Optional[uuid.UUID] = None,
     operation_type: str = OperationTypeEnum.INSERT,

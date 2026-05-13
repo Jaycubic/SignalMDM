@@ -32,6 +32,12 @@ const NAV: NavGroup[] = [
       { label: 'System Health',   path: '/system-health', icon: '♥', roles: ['admin'] },
     ],
   },
+  {
+    group: 'Platform',
+    items: [
+      { label: 'Tenants', path: '/tenants', icon: '🏢', roles: ['admin'] },
+    ],
+  },
 ];
 
 export default function MainLayout() {
@@ -49,12 +55,19 @@ export default function MainLayout() {
     ? (admin.username ?? admin.email).slice(0, 2).toUpperCase()
     : '??';
 
-  // Filter nav items by current role
+  // Filter nav items by current role and tenant
   const userRole = admin?.role ?? 'admin';
-  const visibleNav = NAV.map(group => ({
-    ...group,
-    items: group.items.filter(item => item.roles.includes(userRole)),
-  })).filter(group => group.items.length > 0);
+  const visibleNav = NAV.map(group => {
+    // Platform group is only for SuperAdmin (tenant_id === 'platform')
+    if (group.group === 'Platform' && admin?.tenant_id !== 'platform') {
+      return { ...group, items: [] };
+    }
+
+    return {
+      ...group,
+      items: group.items.filter(item => item.roles.includes(userRole)),
+    };
+  }).filter(group => group.items.length > 0);
 
   return (
     <div className={`mdm-shell${collapsed ? ' mdm-shell--collapsed' : ''}`}>

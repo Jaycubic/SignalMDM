@@ -54,6 +54,7 @@ class TokenPayload(BaseModel):
     """Decoded, validated JWT payload — injected via Depends(require_auth)."""
 
     user_id:   str
+    email:     str
     tenant_id: str  # Can be UUID string or "platform"
     role:      str
     fp_hash:   str
@@ -135,6 +136,7 @@ async def require_auth(
         )
 
     user_id   = payload.get("sub")
+    email     = payload.get("email", "")
     tenant_id = payload.get("tenant_id")
     role      = payload.get("role", "viewer")
     fp_hash   = payload.get("fpHash", "")
@@ -162,6 +164,7 @@ async def require_auth(
     # --- 6. Attach to request state + return --------------------------------
     token_payload = TokenPayload(
         user_id=user_id,
+        email=email,
         tenant_id=tenant_id,
         role=role,
         fp_hash=fp_hash,
@@ -193,20 +196,23 @@ def require_admin(auth: TokenPayload = Depends(require_auth)) -> TokenPayload:
     return auth
 
 
-def require_role(*roles: str):
-    """
-    Flexible role guard — accepts any of the given roles.
+# ---------------------------------------------------------------------------
+# Platform Guards
+# ---------------------------------------------------------------------------
 
-    Usage:
-        @router.post("/ingestion/start")
-        def start(auth: TokenPayload = Depends(require_role("admin", "ingestion_manager"))):
-            ...
+def is_super_admin(auth: TokenPayload = Depends(require_auth)) -> TokenPayload:
     """
-    def _check(auth: TokenPayload = Depends(require_auth)) -> TokenPayload:
-        if auth.role not in roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Required roles: {list(roles)}. Your role: {auth.role}",
-            )
-        return auth
-    return _check
+    Dependency that enforces tenant_id == "platform".
+    Used for global configuration (Tenants, Platform Admins).
+    """
+    logger.info("[auth] Checking SuperAdmin access: user=%s tenant=%s", auth.user_id, auth.tenant_id)
+    if auth.tenant_id != "platform":
+        logger.warning("[auth] SuperAdmin access denied for user=%s tenant=%s", auth.user_id, auth.tenant_id)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Platform-level privileges required.",
+        )
+    return auth
+
+# Alias for standard usage if needed
+get_current_active_user = require_auth

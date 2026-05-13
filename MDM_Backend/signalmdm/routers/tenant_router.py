@@ -1,93 +1,47 @@
-"""
-signalmdm/routers/tenant_router.py
-------------------------------------
-Tenant management endpoints.
-
-Security:
-  POST /tenants/  — public (no auth) — platform bootstrap only.
-  GET  /tenants/  — admin only (lists all tenants — privileged).
-  GET  /tenants/{id} — any authenticated user.
-"""
-
-from __future__ import annotations
-
-import uuid
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from uuid import UUID
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from signalmdm.database import get_db
-from signalmdm.models.tenant import Tenant
-from signalmdm.schemas.ingestion_schema import TenantCreate, TenantRead
-from signalmdm.schemas.common import ok
-from signalmdm.enums import StatusEnum
-from signalmdm.middleware.auth import TokenPayload, require_auth, require_admin
+from signalmdm.middleware.auth import get_current_active_user, is_super_admin
+from signalmdm.schemas.tenant_schema import TenantRead, TenantCreate, TenantUpdate
+from signalmdm.services.tenant_service import tenant_service
 
-router = APIRouter(prefix="/tenants", tags=["Tenants"])
-
-
-@router.post(
-    "/",
-    summary="Create a new tenant (public bootstrap — no auth required)",
-    status_code=status.HTTP_201_CREATED,
+router = APIRouter(
+    prefix="/tenants",
+    tags=["Tenants"],
+    dependencies=[Depends(get_current_active_user), Depends(is_super_admin)]
 )
-def create_tenant(
-    body: TenantCreate,
-    db: Session = Depends(get_db),
-):
-    """
-    Bootstrap a new tenant.
-    This endpoint is intentionally public — it is only used during initial
-    platform setup. In production, restrict this with a platform-level API key.
-    """
-    existing = db.query(Tenant).filter(Tenant.tenant_code == body.tenant_code).first()
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Tenant with code '{body.tenant_code}' already exists.",
-        )
-    tenant = Tenant(
-        tenant_id=uuid.uuid4(),
-        tenant_name=body.tenant_name,
-        tenant_code=body.tenant_code,
-        status=StatusEnum.ACTIVE,
-    )
-    db.add(tenant)
-    db.commit()
-    db.refresh(tenant)
-    return ok(
-        data=TenantRead.model_validate(tenant).model_dump(),
-        message="Tenant created successfully.",
-    )
 
-
-@router.get(
-    "/",
-    summary="List all tenants (admin only)",
-)
+@router.get("/", response_model=list[TenantRead])
 def list_tenants(
-    db: Session = Depends(get_db),
-    auth: TokenPayload = Depends(require_admin),   # admin only
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, le=1000),
+    db: Session = Depends(get_db)
 ):
-    """Return all tenants — admin-only platform endpoint."""
-    tenants = db.query(Tenant).order_by(Tenant.created_at.desc()).all()
-    return ok(
-        data=[TenantRead.model_validate(t).model_dump() for t in tenants],
-        message=f"{len(tenants)} tenant(s) found.",
-    )
+    """List all tenants in the system (Platform Admin only)."""
+    return tenant_service.list_tenants(db, skip=skip, limit=limit)
 
-
-@router.get(
-    "/{tenant_id}",
-    summary="Get a tenant by ID",
-)
-def get_tenant(
-    tenant_id: uuid.UUID,
+@router.post("/", response_model=TenantRead, status_code=status.HTTP_201_CREATED)
+def create_tenant(
+    data: TenantCreate,
     db: Session = Depends(get_db),
-    auth: TokenPayload = Depends(require_auth),
+    current_user = Depends(get_current_active_user)
 ):
-    """Any authenticated user can retrieve a tenant record."""
-    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found.")
-    return ok(data=TenantRead.model_validate(tenant).model_dump())
+    """Register a new root tenant (Platform Admin only)."""
+    return tenant_service.create_tenant(db, data, performed_by=current_user.email)
+
+@router.get("/{tenant_id}", response_model=TenantRead)
+def get_tenant(tenant_id: UUID, db: Session = Depends(get_db)):
+    """Fetch details of a specific tenant."""
+    return tenant_service.get_tenant(db, tenant_id)
+
+@router.patch("/{tenant_id}", response_model=TenantRead)
+def update_tenant(
+    tenant_id: UUID,
+    data: TenantUpdate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    """Update tenant configuration (Platform Admin only)."""
+    return tenant_service.update_tenant(db, tenant_id, data, performed_by=current_user.email)

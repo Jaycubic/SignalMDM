@@ -16,9 +16,10 @@ from __future__ import annotations
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import json
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from dotenv import load_dotenv
@@ -76,6 +77,72 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Response-Time"] = f"{elapsed}ms"
 
         return response
+    
+class ResponseEnvelopeMiddleware(BaseHTTPMiddleware):
+    """
+    Standardises all successful API responses into a uniform envelope:
+    { "success": true, "message": "...", "data": T, "errors": [] }
+
+    This ensures the frontend client (api.ts) always receives a predictable structure.
+    """
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+
+        # Skip non-JSON or already wrapped responses (like from exception handlers)
+        # and skip standard health/root endpoints if desired
+        path = request.url.path
+        if not path.startswith("/api/v1") or response.status_code >= 400:
+            return response
+
+        # Only wrap application/json responses
+        content_type = response.headers.get("Content-Type", "")
+        if "application/json" not in content_type:
+            return response
+
+        # Read the body and wrap it
+        body = b""
+        async for chunk in response.body_iterator:
+            body += chunk
+
+        try:
+            if not body:
+                return Response(content=body, status_code=response.status_code, headers=dict(response.headers))
+
+            data = json.loads(body)
+            # If it's already wrapped (has 'success' and 'data' keys), don't wrap again
+            if isinstance(data, dict) and "success" in data and "data" in data:
+                return Response(
+                    content=body,
+                    status_code=response.status_code,
+                    headers=dict(response.headers)
+                )
+
+            wrapped = {
+                "success": True,
+                "message": "Request fulfilled successfully.",
+                "data": data,
+                "errors": []
+            }
+            
+            # Prepare new headers: remove Content-Length as it will be recalculated
+            new_headers = dict(response.headers)
+            new_headers.pop("content-length", None)
+            new_headers.pop("Content-Length", None)
+            
+            return Response(
+                content=json.dumps(wrapped),
+                status_code=response.status_code,
+                headers=new_headers,
+                media_type="application/json"
+            )
+        except Exception as e:
+            logger.error("[middleware] Failed to wrap response: %s", e)
+            # Return original body if wrapping fails
+            return Response(
+                content=body,
+                status_code=response.status_code,
+                headers=dict(response.headers)
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +190,10 @@ app = FastAPI(
 # 1. Security headers (applied to ALL responses)
 app.add_middleware(SecurityHeadersMiddleware)
 
-# 2. CORS (before security headers so preflight OPTIONS also gets headers)
+# 2. Response envelope (wraps successful JSON responses)
+app.add_middleware(ResponseEnvelopeMiddleware)
+
+# 3. CORS (before security headers so preflight OPTIONS also gets headers)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

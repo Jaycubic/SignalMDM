@@ -1,0 +1,239 @@
+/* MDM_Frontend/src/styles/Tenants.css */
+
+.tn-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    width: 100%;
+    padding: 24px;
+    font-family: var(--font-sans);
+}
+
+.tn-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tn-header__title {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 4px 0;
+}
+
+.tn-header__sub {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+/* Stats Cards */
+.tn-summary-row {
+    display: flex;
+    gap: 16px;
+    width: 100%;
+}
+
+.tn-summary-card {
+    flex: 1;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-md);
+    padding: 16px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: all 0.2s ease;
+}
+
+.tn-summary-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.tn-summary-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tn-summary-card__icon {
+    font-size: 18px;
+    opacity: 0.8;
+}
+
+.tn-summary-card__label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.tn-summary-card__value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* Table Section */
+.tn-table-container {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+.tn-table-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tn-table-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.tn-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.tn-table th {
+    padding: 12px 20px;
+    background: #f9fafb;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.tn-table td {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border-light);
+    font-size: 13.5px;
+    color: var(--text-secondary);
+}
+
+.tn-table tr:last-child td {
+    border-bottom: none;
+}
+
+.tn-table tr:hover td {
+    background: #fdfdfd;
+}
+
+/* Status Badges */
+.tn-badge {
+    padding: 4px 10px;
+    border-radius: 100px;
+    font-size: 11px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.tn-badge--active { background: #ecfdf5; color: #059669; }
+.tn-badge--suspended { background: #fff7ed; color: #ea580c; }
+.tn-badge--archived { background: #f3f4f6; color: #4b5563; }
+
+.tn-badge__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+/* Registration Modal Overlay */
+.tn-modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.4);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    padding: 20px;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.tn-modal {
+    background: #fff;
+    width: 100%;
+    max-width: 500px;
+    border-radius: var(--r-lg);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+    overflow: hidden;
+    animation: slideUp 0.3s ease-out;
+}
+
+.tn-modal-header {
+    padding: 24px;
+    background: #fff;
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tn-modal-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.tn-modal-body {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.tn-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.tn-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.tn-input {
+    padding: 10px 14px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-md);
+    font-size: 14px;
+    outline: none;
+    transition: all 0.2s;
+}
+
+.tn-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(21,87,255,0.1);
+}
+
+.tn-modal-footer {
+    padding: 16px 24px;
+    background: #f9fafb;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }

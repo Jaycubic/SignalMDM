@@ -9,6 +9,8 @@ import {
   CONNECTION_TYPES,
   ENTITY_TYPES,
 } from '../../services/sourceService';
+import { tenantService, type TenantRecord } from '../../services/tenantService';
+import { useAuth } from '../../context/AuthContext';
 
 /* Import Styles */
 import '../../styles/theme.css';
@@ -16,7 +18,14 @@ import '../../styles/RegisterSourceModal.css';
 
 /* ─── Types & constants ──────────────────────────────────────── */
 interface PriorityRow { attribute: string; priority: number }
-interface FormErrors { sourceName?: string; sourceCode?: string; sourceType?: string; connectionType?: string; supportedEntities?: string }
+interface FormErrors { 
+  tenantId?: string;
+  sourceName?: string; 
+  sourceCode?: string; 
+  sourceType?: string; 
+  connectionType?: string; 
+  supportedEntities?: string 
+}
 
 const DEFAULT_PRIORITY: Partial<Record<EntityType, PriorityRow[]>> = {
   CUSTOMER: [{ attribute: 'customer_name', priority: 1 }, { attribute: 'email', priority: 1 }, { attribute: 'phone', priority: 2 }, { attribute: 'billing_address', priority: 3 }],
@@ -50,7 +59,8 @@ const ENTITY_ICONS: Record<EntityType, string> = {
   EMPLOYEE: '👥',
   OTHER: '⚙️'
 };
-const STEP_LABELS = ['Basic Info', 'Entities', 'Priority', 'Connection'];
+const STEP_LABELS_DEFAULT = ['Basic Info', 'Entities', 'Priority', 'Connection'];
+const STEP_LABELS_SUPER   = ['Select Tenant', 'Basic Info', 'Entities', 'Priority', 'Connection'];
 
 /* ─── Props ──────────────────────────────────────────────────── */
 interface Props {
@@ -60,7 +70,14 @@ interface Props {
 
 /* ─── Component ──────────────────────────────────────────────── */
 export default function RegisterSourceModal({ onClose, onRegister }: Props) {
+  const { admin } = useAuth();
+  const isSuperAdmin = admin?.tenant_id === 'platform';
+
   const [step, setStep] = useState(1);
+  const [tenants, setTenants] = useState<TenantRecord[]>([]);
+  const [targetTenantId, setTargetTenantId] = useState('');
+  const [loadingTenants, setLoadingTenants] = useState(false);
+
   const [sourceName, setSourceName] = useState('');
   const [sourceCode, setSourceCode] = useState('');
   const [sourceType, setSourceType] = useState<SourceType | ''>('');
@@ -73,6 +90,20 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const stepLabels = isSuperAdmin ? STEP_LABELS_SUPER : STEP_LABELS_DEFAULT;
+  const totalSteps = stepLabels.length;
+
+  // Fetch tenants for SuperAdmin
+  useEffect(() => {
+    if (isSuperAdmin) {
+      setLoadingTenants(true);
+      tenantService.listTenants()
+        .then(res => setTenants(res))
+        .catch(() => setSubmitError('Failed to load tenants list.'))
+        .finally(() => setLoadingTenants(false));
+    }
+  }, [isSuperAdmin]);
+
   // Auto-generate lowercase slug
   useEffect(() => {
     if (sourceName && !codeEdited) {
@@ -83,16 +114,30 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
   }, [sourceName, codeEdited]);
 
   useEffect(() => {
-    const next: Record<string, PriorityRow[]> = {};
-    entities.forEach(e => { next[e] = priorityConfig[e] || DEFAULT_PRIORITY[e] || []; });
-    setPriorityConfig(next);
+    setPriorityConfig(prev => {
+      const next: Record<string, PriorityRow[]> = {};
+      entities.forEach(e => { 
+        next[e] = prev[e] || DEFAULT_PRIORITY[e] || []; 
+      });
+      return next;
+    });
   }, [entities]);
 
   const toggleEntity = (e: EntityType) =>
     setEntities(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e]);
 
   const handleNext = () => {
-    if (step === 1) {
+    // SuperAdmin Tenant Step
+    if (isSuperAdmin && step === 1) {
+      if (!targetTenantId) {
+        setErrors({ tenantId: 'Please select a tenant first' });
+        return;
+      }
+    }
+
+    // Basic Info Step (Step 1 for standard, Step 2 for SuperAdmin)
+    const basicInfoStep = isSuperAdmin ? 2 : 1;
+    if (step === basicInfoStep) {
       const errs: FormErrors = {};
       if (!sourceName.trim()) errs.sourceName = 'Source name is required';
       if (!sourceCode.trim()) errs.sourceCode = 'Source code is required';
@@ -101,9 +146,15 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
       if (!connectionType) errs.connectionType = 'Connection type is required';
       if (Object.keys(errs).length) { setErrors(errs); return; }
     }
-    if (step === 2 && entities.length === 0) { setErrors({ supportedEntities: 'Select at least one entity' }); return; }
+
+    const entitiesStep = isSuperAdmin ? 3 : 2;
+    if (step === entitiesStep && entities.length === 0) { 
+      setErrors({ supportedEntities: 'Select at least one entity' }); 
+      return; 
+    }
+
     setErrors({});
-    setStep(s => Math.min(s + 1, 4));
+    setStep(s => Math.min(s + 1, totalSteps));
   };
 
   const handleSubmit = async () => {
@@ -120,7 +171,7 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
           priority_config: priorityConfig,
           connection_config: connConfig,
         },
-      });
+      }, isSuperAdmin ? targetTenantId : undefined);
       onRegister(record);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
@@ -137,18 +188,18 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
         <div className="rsm-header">
           <div>
             <h2 className="rsm-header__title">Register Source System</h2>
-            <p className="rsm-header__sub">Step {step} of 4 — {STEP_LABELS[step - 1]}</p>
+            <p className="rsm-header__sub">Step {step} of {totalSteps} — {stepLabels[step - 1]}</p>
           </div>
           <button className="rsm-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         {/* Stepper */}
         <div className="rsm-stepper">
-          {STEP_LABELS.map((label, i) => (
+          {stepLabels.map((label, i) => (
             <div key={label} className={`rsm-step${i + 1 === step ? ' rsm-step--active' : ''}${i + 1 < step ? ' rsm-step--done' : ''}`}>
               <div className="rsm-step__dot">{i + 1 < step ? '✓' : i + 1}</div>
               <span className="rsm-step__label">{label}</span>
-              {i < 3 && <div className="rsm-step__line" />}
+              {i < totalSteps - 1 && <div className="rsm-step__line" />}
             </div>
           ))}
         </div>
@@ -156,8 +207,37 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
         {/* Body */}
         <div className="rsm-body">
 
-          {/* Step 1 — Basic Info */}
-          {step === 1 && (
+          {/* Step 1 (SuperAdmin Only) — Tenant Selection */}
+          {isSuperAdmin && step === 1 && (
+            <div className="rsm-section">
+              <p className="rsm-section-desc">You are logged in as SuperAdmin. Please select the tenant for which you want to register this source system.</p>
+              <div className={`rsm-field${errors.tenantId ? ' rsm-field--error' : ''}`}>
+                <label htmlFor="rsm-tenant-id" className="rsm-label">Target Tenant <span className="rsm-required">*</span></label>
+                {loadingTenants ? (
+                  <div className="rsm-loading-inline">Loading tenants...</div>
+                ) : (
+                  <select 
+                    id="rsm-tenant-id" 
+                    className="rsm-select" 
+                    value={targetTenantId} 
+                    onChange={e => { setTargetTenantId(e.target.value); setErrors({}); }}
+                  >
+                    <option value="">— Select tenant —</option>
+                    {tenants.map(t => (
+                      <option key={t.id} value={t.id}>{t.tenantName} ({t.tenantCode})</option>
+                    ))}
+                  </select>
+                )}
+                {errors.tenantId && <span className="rsm-error-msg">{errors.tenantId}</span>}
+              </div>
+              <div className="rsm-alert rsm-alert--info" style={{ marginTop: '20px' }}>
+                ℹ This source system will be isolated and exclusively available to the selected tenant.
+              </div>
+            </div>
+          )}
+
+          {/* Step Basic Info (Step 1 or 2) */}
+          {step === (isSuperAdmin ? 2 : 1) && (
             <div className="rsm-section">
               <div className="rsm-field-grid">
                 <div className={`rsm-field${errors.sourceName ? ' rsm-field--error' : ''}`}>
@@ -195,8 +275,8 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
             </div>
           )}
 
-          {/* Step 2 — Entities */}
-          {step === 2 && (
+          {/* Step Entities (Step 2 or 3) */}
+          {step === (isSuperAdmin ? 3 : 2) && (
             <div className="rsm-section">
               <p className="rsm-section-desc">Select all entity types this source system provides data for.</p>
               {errors.supportedEntities && <div className="rsm-alert rsm-alert--error">{errors.supportedEntities}</div>}
@@ -218,8 +298,8 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
             </div>
           )}
 
-          {/* Step 3 — Priority */}
-          {step === 3 && (
+          {/* Step Priority (Step 3 or 4) */}
+          {step === (isSuperAdmin ? 4 : 3) && (
             <div className="rsm-section">
               <p className="rsm-section-desc">Configure attribute priority per entity. Lower number = higher priority.</p>
               {entities.length === 0 && (
@@ -258,8 +338,8 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
             </div>
           )}
 
-          {/* Step 4 — Connection Config */}
-          {step === 4 && (
+          {/* Step Connection (Step 4 or 5) */}
+          {step === (isSuperAdmin ? 5 : 4) && (
             <div className="rsm-section">
               {!connectionType ? (
                 <div className="rsm-alert rsm-alert--info">No connection type selected. Go back to Step 1.</div>
@@ -316,7 +396,7 @@ export default function RegisterSourceModal({ onClose, onRegister }: Props) {
                 {step > 1 && (
                   <button className="rsm-btn rsm-btn--outline" onClick={() => setStep(s => s - 1)} disabled={submitting}>← Back</button>
                 )}
-                {step < 4 ? (
+                {step < totalSteps ? (
                   <button id="rsm-next-btn" className="rsm-btn rsm-btn--primary" onClick={handleNext}>Next →</button>
                 ) : (
                   <button

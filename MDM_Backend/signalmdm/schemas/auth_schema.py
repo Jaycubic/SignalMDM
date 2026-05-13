@@ -58,6 +58,7 @@ class AdminProfile(BaseModel):
     email:      str             = Field(..., description="Admin email.")
     username:   str             = Field(..., description="Display name.")
     role:       str             = Field(default="admin", description="Always 'admin' for platform admins.")
+    tenant_id:  str             = Field(default="platform", description="Identifier of the tenant (platform for super admins).")
     is_active:  bool
     last_login_at: Optional[datetime]
 

@@ -24,6 +24,7 @@ export interface AdminProfile {
   email:         string;
   username:      string;
   role:          string;
+  tenant_id:     string; // Added to match TokenPayload
   is_active:     boolean;
   last_login_at: string | null;
 }

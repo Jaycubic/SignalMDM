@@ -90,7 +90,7 @@ function mapStatus(
 ): SourceRecord['status'] {
   if (!isActive) return 'INACTIVE';
   if (backendStatus === 'SUSPENDED') return 'SUSPENDED';
-  if (backendStatus === 'ARCHIVED')  return 'ARCHIVED';
+  if (backendStatus === 'ARCHIVED') return 'ARCHIVED';
   return 'ACTIVE';
 }
 
@@ -102,17 +102,17 @@ function toSourceRecord(raw: SourceSystemRead): SourceRecord {
     : [];
 
   return {
-    id:               raw.source_system_id,
-    sourceName:       raw.source_name,
-    sourceCode:       raw.source_code,
-    sourceType:       raw.source_type,
-    connectionType:   raw.connection_type,
-    configJson:       cfg,
+    id: raw.source_system_id,
+    sourceName: raw.source_name,
+    sourceCode: raw.source_code,
+    sourceType: raw.source_type,
+    connectionType: raw.connection_type,
+    configJson: cfg,
     supportedEntities,
-    status:           mapStatus(raw.is_active, raw.status),
-    isActive:         raw.is_active,
-    createdDate:      raw.created_at.slice(0, 10),
-    updatedDate:      raw.updated_at.slice(0, 10),
+    status: mapStatus(raw.is_active, raw.status),
+    isActive: raw.is_active,
+    createdDate: raw.created_at.slice(0, 10),
+    updatedDate: raw.updated_at.slice(0, 10),
   };
 }
 
@@ -143,9 +143,12 @@ export const sourceService = {
   /**
    * Register a new source system.
    * POST /api/v1/sources/register
+   * 
+   * @param tenantId Optional tenant UUID if calling as SuperAdmin
    */
-  async registerSource(payload: SourceSystemCreatePayload): Promise<SourceRecord> {
-    const res = await api.post<SourceSystemRead>('/sources/register', payload);
+  async registerSource(payload: SourceSystemCreatePayload, tenantId?: string): Promise<SourceRecord> {
+    const headers = tenantId ? { 'X-Tenant-ID': tenantId } : undefined;
+    const res = await api.post<SourceSystemRead>('/sources/register', payload, headers);
     if (!res.data) throw new Error('No data returned from server after registration.');
     return toSourceRecord(res.data);
   },

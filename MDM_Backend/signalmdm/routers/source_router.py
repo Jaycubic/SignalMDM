@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Header, status
 from sqlalchemy.orm import Session
 
 from signalmdm.database import get_db
@@ -32,6 +32,7 @@ router = APIRouter(prefix="/sources", tags=["Source Systems"])
 )
 def register_source(
     body: SourceSystemCreate,
+    x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
     db: Session = Depends(get_db),
     auth: TokenPayload = Depends(require_auth),
 ):
@@ -41,11 +42,18 @@ def register_source(
     - `source_code` must be unique (lowercase slug, e.g. `salesforce_crm`).
     - `source_type` and `connection_type` use predefined enums.
     - `config_json` stores non-sensitive connection parameters.
-    - `tenant_id` comes from the verified JWT — not an open header.
+    - `tenant_id`: 
+        - For standard users, it comes from the verified JWT.
+        - For SuperAdmins (platform tenant), it can be overridden via `X-Tenant-ID` header.
     """
+    # Determine the target tenant
+    target_tenant = auth.tenant_id
+    if auth.tenant_id == "platform" and x_tenant_id:
+        target_tenant = x_tenant_id
+
     source = source_service.create_source(
         db,
-        tenant_id=auth.tenant_id,
+        tenant_id=target_tenant,
         data=body,
         performed_by=auth.user_id,
     )
