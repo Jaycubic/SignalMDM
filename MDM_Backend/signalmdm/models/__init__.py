@@ -39,6 +39,11 @@ from signalmdm.models.file_upload    import FileUpload
 from signalmdm.models.raw_record     import RawRecord
 from signalmdm.models.staging_entity import StagingEntity
 
+# ---------------------------------------------------------------------------
+# Auth — Platform Admin
+# ---------------------------------------------------------------------------
+from signalmdm.models.platform_admin import PlatformAdmin
+
 __all__ = [
     # Core
     "Tenant",
@@ -64,4 +69,6 @@ __all__ = [
     "FileUpload",
     "RawRecord",
     "StagingEntity",
+    # Auth
+    "PlatformAdmin",
 ]

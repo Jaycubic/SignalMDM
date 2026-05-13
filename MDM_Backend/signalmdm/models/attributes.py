@@ -1,5 +1,5 @@
 """
-models/attributes.py
+MDM_Backend/signalmdm/models/attributes.py
 --------------------
 Entity attribute store and full change-history trail:
     EntityAttribute         — key-value attribute store with effective dating

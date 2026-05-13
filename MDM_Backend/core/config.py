@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     app_title: str = "SignalMDM API"
     app_version: str = "1.0.0"
 
+    # SMTP — Email OTP delivery
+    smtp_host: str = Field(default="smtp.gmail.com", env="SMTP_HOST")
+    smtp_port: int = Field(default=587, env="SMTP_PORT")
+    smtp_username: str = Field(default="", env="SMTP_USERNAME")
+    smtp_password: str = Field(default="", env="SMTP_PASSWORD")
+    smtp_from: str = Field(default="", env="SMTP_FROM")
+    smtp_use_tls: bool = Field(default=True, env="SMTP_USE_TLS")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

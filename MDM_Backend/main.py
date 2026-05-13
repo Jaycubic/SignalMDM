@@ -38,6 +38,7 @@ from core.config import settings
 from signalmdm.routers.tenant_router    import router as tenant_router
 from signalmdm.routers.source_router    import router as source_router
 from signalmdm.routers.ingestion_router import router as ingestion_router
+from signalmdm.routers.auth_router      import router as auth_router
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +162,7 @@ PREFIX = "/api/v1"
 app.include_router(tenant_router,    prefix=PREFIX)
 app.include_router(source_router,    prefix=PREFIX)
 app.include_router(ingestion_router, prefix=PREFIX)
+app.include_router(auth_router,      prefix=PREFIX)
 
 
 # ---------------------------------------------------------------------------

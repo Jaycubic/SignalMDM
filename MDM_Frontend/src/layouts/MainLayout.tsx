@@ -1,46 +1,60 @@
+// MDM_Frontend/src/layouts/MainLayout.tsx
 import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import './MainLayout.css';
 
-interface NavItem {
-  label: string;
-  path: string;
-  icon: string;
-}
+interface NavItem  { label: string; path: string; icon: string; roles: string[]; }
+interface NavGroup { group: string; items: NavItem[]; }
 
-interface NavGroup {
-  group: string;
-  items: NavItem[];
-}
-
+// All items marked 'admin' for Phase 1 — extend roles array to restrict later
 const NAV: NavGroup[] = [
   {
     group: 'Main',
     items: [
-      { label: 'Dashboard', path: '/', icon: '⊞' },
+      { label: 'Dashboard',       path: '/',            icon: '⊞', roles: ['admin'] },
     ],
   },
   {
     group: 'Foundation',
     items: [
-      { label: 'Source Systems', path: '/sources', icon: '⬡' },
-      { label: 'Ingestion Runs', path: '/ingestion', icon: '↻' },
-      { label: 'Upload Data', path: '/upload', icon: '⬆' },
-      { label: 'Raw Landing', path: '/raw-landing', icon: '⬇' },
-      { label: 'Staging Records', path: '/staging', icon: '◫' },
+      { label: 'Source Systems',  path: '/sources',     icon: '⬡', roles: ['admin'] },
+      { label: 'Ingestion Runs',  path: '/ingestion',   icon: '↻', roles: ['admin'] },
+      { label: 'Upload Data',     path: '/upload',      icon: '⬆', roles: ['admin'] },
+      { label: 'Raw Landing',     path: '/raw-landing', icon: '⬇', roles: ['admin'] },
+      { label: 'Staging Records', path: '/staging',     icon: '◫', roles: ['admin'] },
     ],
   },
   {
     group: 'Admin',
     items: [
-      { label: 'API Logs', path: '/api-logs', icon: '≡' },
-      { label: 'System Health', path: '/system-health', icon: '♥' },
+      { label: 'API Logs',        path: '/api-logs',      icon: '≡', roles: ['admin'] },
+      { label: 'System Health',   path: '/system-health', icon: '♥', roles: ['admin'] },
     ],
   },
 ];
 
 export default function MainLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  const { admin, isLoading, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
+
+  // Derive initials from username or email
+  const initials = admin
+    ? (admin.username ?? admin.email).slice(0, 2).toUpperCase()
+    : '??';
+
+  // Filter nav items by current role
+  const userRole = admin?.role ?? 'admin';
+  const visibleNav = NAV.map(group => ({
+    ...group,
+    items: group.items.filter(item => item.roles.includes(userRole)),
+  })).filter(group => group.items.length > 0);
 
   return (
     <div className={`mdm-shell${collapsed ? ' mdm-shell--collapsed' : ''}`}>
@@ -68,7 +82,7 @@ export default function MainLayout() {
         </div>
 
         <nav className="mdm-sidebar__nav">
-          {NAV.map(group => (
+          {visibleNav.map(group => (
             <div key={group.group} className="mdm-sidebar__group">
               {!collapsed && (
                 <span className="mdm-sidebar__group-label">{group.group}</span>
@@ -96,13 +110,25 @@ export default function MainLayout() {
         <div className="mdm-sidebar__footer">
           {!collapsed && (
             <div className="mdm-sidebar__user">
-              <div className="mdm-sidebar__avatar">JD</div>
+              <div className="mdm-sidebar__avatar">{initials}</div>
               <div className="mdm-sidebar__user-info">
-                <span className="mdm-sidebar__user-name">John Doe</span>
-                <span className="mdm-sidebar__user-role">DATA_ENGINEER</span>
+                <span className="mdm-sidebar__user-name">
+                  {isLoading ? '…' : (admin?.username ?? 'Admin')}
+                </span>
+                <span className="mdm-sidebar__user-role">
+                  {admin?.role?.toUpperCase() ?? 'ADMIN'}
+                </span>
               </div>
             </div>
           )}
+          <button
+            className="mdm-sidebar__logout-btn"
+            onClick={handleLogout}
+            title="Logout"
+          >
+            <span style={{ fontSize: collapsed ? 16 : 14 }}>⏻</span>
+            {!collapsed && <span>Logout</span>}
+          </button>
         </div>
       </aside>
 
@@ -113,8 +139,11 @@ export default function MainLayout() {
             <span className="mdm-topbar__env-badge">PHASE 1 — FOUNDATION</span>
           </div>
           <div className="mdm-topbar__right">
-            {/* <span className="mdm-topbar__icon-btn" title="Notifications">🔔</span>
-            <span className="mdm-topbar__icon-btn" title="Settings">⚙</span> */}
+            {admin && (
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                {admin.email}
+              </span>
+            )}
           </div>
         </header>
         <main className="mdm-content">

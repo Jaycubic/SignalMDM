@@ -1,5 +1,5 @@
 """
-signalmdm/middleware/auth.py
+MDM_Backend/signalmdm/middleware/auth.py
 ------------------------------
 FastAPI security dependency — mirrors the JS auth.js middleware exactly.
 
@@ -74,8 +74,11 @@ async def require_auth(
     """
     Validate the encrypted JWT on every protected request.
 
+    Token source priority:
+        1. Authorization: Bearer <encrypted_jwt>  (explicit header)
+        2. accessToken httpOnly cookie            (browser auth flow)
+
     Headers expected from the frontend:
-        Authorization: Bearer <base64(IV + AES_CBC_ciphertext_of_JWT)>
         X-Device-ID:   <stable device fingerprint string>
         User-Agent:    <browser/app user-agent>   (standard header)
 
@@ -87,13 +90,20 @@ async def require_auth(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # --- 1. Extract encrypted token from Authorization header ---------------
-    if not authorization or not authorization.startswith("Bearer "):
-        logger.warning("[auth] Missing or malformed Authorization header.")
-        raise credentials_exc
+    # --- 1. Extract encrypted token: header first, then cookie ---
+    encrypted_token: Optional[str] = None
 
-    encrypted_token = authorization.split(" ", 1)[1].strip()
+    if authorization and authorization.startswith("Bearer "):
+        encrypted_token = authorization.split(" ", 1)[1].strip() or None
+
     if not encrypted_token:
+        # Fall back to httpOnly cookie set by the auth endpoints
+        cookie_token = request.cookies.get("accessToken")
+        if cookie_token:
+            encrypted_token = cookie_token
+
+    if not encrypted_token:
+        logger.warning("[auth] No token in Authorization header or accessToken cookie.")
         raise credentials_exc
 
     # --- 2. AES-256-CBC decrypt → raw JWT -----------------------------------

@@ -3,11 +3,12 @@
  * -------------------
  * Base HTTP client for the SignalMDM FastAPI backend.
  *
- * Auth:
- *   - Authorization: Bearer <encrypted_jwt>  (stored in localStorage as 'auth_token')
- *   - X-Device-ID: <device_fingerprint>       (stored in localStorage as 'device_id')
+ * Auth strategy (cookie-based):
+ *   - `accessToken`  — httpOnly cookie set by backend on login (AES-encrypted JWT).
+ *     Browser sends it automatically on every same-origin / credentialed request.
+ *   - `X-Device-ID`  — non-sensitive stable device fingerprint, kept in sessionStorage.
  *
- * Every endpoint wraps its response in StandardResponse:
+ * All responses are wrapped in StandardResponse:
  *   { success: bool, message: string, data: T | null, errors: string[] }
  */
 
@@ -34,14 +35,30 @@ export class ApiError extends Error {
   }
 }
 
-// ─── Auth headers helper ───────────────────────────────────────────────────
-function getHeaders(): Record<string, string> {
-  const token    = localStorage.getItem('auth_token') ?? '';
-  const deviceId = localStorage.getItem('device_id')  ?? 'web-client';
+// ─── Device ID helper (non-sensitive — not a secret) ──────────────────────
+export function getDeviceId(): string {
+  let id = sessionStorage.getItem('mdm_device_id');
+  if (!id) {
+    // FingerprintJS will overwrite this with a stable ID after init.
+    // Fallback: random ID for the session.
+    id = `web-${Math.random().toString(36).slice(2)}`;
+    sessionStorage.setItem('mdm_device_id', id);
+  }
+  return id;
+}
+
+export function setDeviceId(id: string): void {
+  sessionStorage.setItem('mdm_device_id', id);
+}
+
+// ─── Build request headers ─────────────────────────────────────────────────
+// Note: accessToken is in an httpOnly cookie — browser attaches it automatically.
+// We only need to send X-Device-ID explicitly.
+function getHeaders(extra?: Record<string, string>): Record<string, string> {
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
-    'X-Device-ID': deviceId,
+    'X-Device-ID': getDeviceId(),
+    ...extra,
   };
 }
 
@@ -50,12 +67,20 @@ async function request<T>(
   method: string,
   path: string,
   body?: unknown,
+  extraHeaders?: Record<string, string>,
 ): Promise<StandardResponse<T>> {
   const response = await fetch(`${BASE_URL}${path}`, {
     method,
-    headers: getHeaders(),
+    headers: getHeaders(extraHeaders),
+    credentials: 'include', // ← sends httpOnly cookies cross-origin
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+
+  // If 401 on any non-auth endpoint, redirect to login
+  if (response.status === 401 && !path.startsWith('/auth/')) {
+    window.location.href = '/login';
+    return { success: false, message: 'Session expired.', data: null, errors: [] };
+  }
 
   let json: StandardResponse<T>;
   try {
@@ -80,8 +105,12 @@ async function request<T>(
 
 // ─── Convenience methods ───────────────────────────────────────────────────
 export const api = {
-  get:    <T>(path: string)                => request<T>('GET',    path),
-  post:   <T>(path: string, body: unknown) => request<T>('POST',   path, body),
-  put:    <T>(path: string, body: unknown) => request<T>('PUT',    path, body),
-  delete: <T>(path: string)               => request<T>('DELETE', path),
+  get:    <T>(path: string, headers?: Record<string, string>) =>
+            request<T>('GET', path, undefined, headers),
+  post:   <T>(path: string, body: unknown, headers?: Record<string, string>) =>
+            request<T>('POST', path, body, headers),
+  put:    <T>(path: string, body: unknown, headers?: Record<string, string>) =>
+            request<T>('PUT', path, body, headers),
+  delete: <T>(path: string, headers?: Record<string, string>) =>
+            request<T>('DELETE', path, undefined, headers),
 };
