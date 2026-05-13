@@ -318,7 +318,7 @@ const RUN_ERRORS: Partial<Record<RunStatus, RunError[]>> = {
 };
 
 /* ─── Sub-components ────────────────────────────────────────── */
-function StatusBadge({ status }: { status: RunStatus }) {
+function StatusBadge({ status }: { status: RunStatus }): JSX.Element {
     return (
         <span className={`ir-status ir-status--${status}`}>
             {STATUS_LABEL[status] || status}
@@ -331,7 +331,7 @@ interface ProgressBarProps {
     total: number;
 }
 
-function ProgressBar({ loaded, total }: ProgressBarProps) {
+function ProgressBar({ loaded, total }: ProgressBarProps): JSX.Element {
     const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
     return (
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 100 }}>
@@ -351,7 +351,7 @@ interface StartIngestionModalProps {
     onStart: (data: StartIngestionData) => void;
 }
 
-function StartIngestionModal({ onClose, onStart }: StartIngestionModalProps) {
+function StartIngestionModal({ onClose, onStart }: StartIngestionModalProps): JSX.Element {
     const [source, setSource] = useState<string>("");
     const [entity, setEntity] = useState<string>("");
     const [runType, setRunType] = useState<string>("");
@@ -446,7 +446,7 @@ interface RunDetailsDrawerProps {
     onClose: () => void;
 }
 
-function RunDetailsDrawer({ run, onClose }: RunDetailsDrawerProps) {
+function RunDetailsDrawer({ run, onClose }: RunDetailsDrawerProps): JSX.Element {
     const [tab, setTab] = useState<DrawerTab>("overview");
     const timeline: TimelineItem[] = RUN_TIMELINES[run.status] || RUN_TIMELINES["CREATED"];
     const errors: RunError[] = RUN_ERRORS[run.status] || [];
@@ -564,14 +564,14 @@ function RunDetailsDrawer({ run, onClose }: RunDetailsDrawerProps) {
 /* ═══════════════════════════════════════════════════════════════
    INGESTION RUNS PAGE
 ═══════════════════════════════════════════════════════════════ */
-export default function IngestionRuns() {
+export default function IngestionRuns(): JSX.Element {
     const [runs, setRuns] = useState<IngestionRun[]>(MOCK_RUNS);
     const [showModal, setShowModal] = useState<boolean>(false);
     const [viewRun, setViewRun] = useState<IngestionRun | null>(null);
     const [search, setSearch] = useState<string>("");
     const [filterStatus, setFilterStatus] = useState<string>("ALL");
     const [filterSource, setFilterSource] = useState<string>("ALL");
-    const [, setLastRefresh] = useState<Date>(new Date());
+    const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
     const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     /* Auto-refresh every 10s for running jobs */

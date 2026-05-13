@@ -180,12 +180,14 @@ pip install python-multipart==0.0.22
 pip install python-jose[cryptography]==3.5.0
 pip install cryptography==46.0.5
 pip install bcrypt==5.0.0
+pip install pyotp==2.9.0
+pip install email-validator==2.3.0
 ```
 
 **Or install all at once:**
 
 ```powershell
-pip install fastapi uvicorn sqlalchemy psycopg2-binary pydantic pydantic-settings python-dotenv celery redis python-multipart "python-jose[cryptography]" cryptography bcrypt
+pip install fastapi uvicorn sqlalchemy psycopg2-binary pydantic pydantic-settings python-dotenv celery redis python-multipart "python-jose[cryptography]" cryptography bcrypt pyotp email-validator
 ```
 
 ### 3.3 Configure Environment Variables
@@ -351,8 +353,8 @@ VITE_TOKEN_ENCRYPTION_KEY=a3f1b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7
 Install required security packages:
 
 ```powershell
-npm install crypto-js axios
-npm install --save-dev @types/crypto-js
+npm install crypto-js axios qrcode
+npm install --save-dev @types/crypto-js @types/qrcode
 ```
 
 Start the dev server:

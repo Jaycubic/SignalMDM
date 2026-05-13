@@ -294,6 +294,7 @@ def login(email: str, password: str, db: Session) -> dict:
             detail="Account locked due to multiple failed attempts. Try again in 2 hours.",
         )
 
+    logger.info("[auth_service] Login attempt for email: %s", email)
     admin: Optional[PlatformAdmin] = (
         db.query(PlatformAdmin)
         .filter(PlatformAdmin.email == email)
@@ -301,8 +302,10 @@ def login(email: str, password: str, db: Session) -> dict:
     )
 
     # Timing-safe: always run bcrypt even if user not found
-    dummy_hash = "$2b$12$abcdefghijklmnopqrstuvuFakeHashForTimingProtection"
+    # Using a validly formatted hash to avoid ValueError: Invalid salt
+    dummy_hash = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGTmLwCEZxgcJsf3DeMrVUFlDIG"
     if not admin:
+        logger.warning("[auth_service] User not found: %s", email)
         bcrypt.checkpw(b"dummy", dummy_hash.encode())
         _increment_attempt("login", email, MAX_LOGIN_ATTEMPTS)
         raise HTTPException(
@@ -317,6 +320,7 @@ def login(email: str, password: str, db: Session) -> dict:
         )
 
     if not _verify_password(password, admin.password_hash):
+        logger.warning("[auth_service] Password mismatch for user: %s", email)
         _increment_attempt("login", str(admin.admin_id), MAX_LOGIN_ATTEMPTS)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
