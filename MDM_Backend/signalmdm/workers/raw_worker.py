@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import csv
 import json
+import time
 import uuid
 import logging
 
@@ -29,6 +30,7 @@ from signalmdm.models.file_upload    import FileUpload
 from signalmdm.services.raw_service     import raw_service
 from signalmdm.services.ingestion_service import ingestion_service
 from signalmdm.enums import IngestionStateEnum
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +117,11 @@ def process_raw_upload(self, run_id_str: str, file_id_str: str, tenant_id_str: s
             record_count=record_count,
             performed_by="raw_worker",
         )
+
+        delay = max(0, settings.ingestion_pipeline_stage_delay_seconds)
+        if delay:
+            logger.info("[raw_worker] Pacing %ss before staging (run=%s)", delay, run_id)
+            time.sleep(delay)
 
         logger.info("[raw_worker] Completed run=%s records=%d", run_id, record_count)
 

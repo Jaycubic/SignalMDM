@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import '../../styles/theme.css';
 import '../../styles/IngestionRuns.css';
 import { ingestionRunService, type IngestionRunRecord, type RunStatus } from '../../services/ingestionRunService';
+import { uploadService } from '../../services/uploadService';
 import { sourceService, type SourceRecord } from '../../services/sourceService';
 import { tenantService, type TenantRecord } from '../../services/tenantService';
 import { authService } from '../../services/authService';
@@ -464,7 +465,11 @@ function IngestionRuns(): React.ReactElement {
             );
             
             if (data.file) {
-                await ingestionRunService.uploadFile(newRun.id, data.file, isSuperAdmin ? data.tenantId : undefined);
+                await uploadService.uploadToIngestionRun(
+                    newRun.id,
+                    data.file,
+                    isSuperAdmin ? data.tenantId : undefined,
+                );
             }
             
             await loadData();

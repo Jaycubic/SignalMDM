@@ -12,8 +12,10 @@
  *   { success: bool, message: string, data: T | null, errors: string[] }
  */
 
-const BASE_URL =
+export const API_BASE_URL =
   (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000/api/v1';
+
+const BASE_URL = API_BASE_URL;
 
 // ─── Standard response envelope ───────────────────────────────────────────
 export interface StandardResponse<T = unknown> {
@@ -137,6 +139,68 @@ async function request<T>(
   return json;
 }
 
+// ─── Multipart (e.g. file upload) — do not set Content-Type (browser sets boundary) ──
+async function postFormData<T>(
+  path: string,
+  formData: FormData,
+  extraHeaders?: Record<string, string>,
+  _isRetry = false,
+): Promise<StandardResponse<T>> {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'X-Device-ID': getDeviceId(),
+      ...extraHeaders,
+    },
+    credentials: 'include',
+    body: formData,
+  });
+
+  if (response.status === 401) {
+    if (path.startsWith('/auth/')) {
+      const json = (await response.json()) as StandardResponse<T>;
+      throw new ApiError(json.message || 'Auth failed', 401);
+    }
+    if (!_isRetry) {
+      try {
+        const refreshRes = await fetch(`${BASE_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: getHeaders(),
+          credentials: 'include',
+        });
+        if (refreshRes.ok) {
+          return postFormData<T>(path, formData, extraHeaders, true);
+        }
+      } catch (err) {
+        console.error('[api] Refresh call failed:', err);
+      }
+    }
+    console.error('[api] Session expired. Redirecting to login.');
+    window.location.href = '/login';
+    return { success: false, message: 'Session expired.', data: null, errors: [] };
+  }
+
+  let json: StandardResponse<T>;
+  try {
+    json = (await response.json()) as StandardResponse<T>;
+  } catch {
+    throw new ApiError(
+      `Server returned a non-JSON response (HTTP ${response.status})`,
+      response.status,
+    );
+  }
+
+  if (!response.ok) {
+    throw new ApiError(
+      json?.message ?? `Request failed with status ${response.status}`,
+      response.status,
+      json?.errors ?? [],
+    );
+  }
+
+  return json;
+}
+
 // ─── Convenience methods ───────────────────────────────────────────────────
 export const api = {
   get:    <T>(path: string, headers?: Record<string, string>) =>
@@ -149,4 +213,6 @@ export const api = {
             request<T>('PATCH', path, body, headers),
   delete: <T>(path: string, headers?: Record<string, string>) =>
             request<T>('DELETE', path, undefined, headers),
+  postForm: <T>(path: string, formData: FormData, headers?: Record<string, string>) =>
+            postFormData<T>(path, formData, headers),
 };

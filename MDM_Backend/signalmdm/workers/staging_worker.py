@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 import logging
+import time
 
 from celery.exceptions import MaxRetriesExceededError
 
@@ -20,6 +21,7 @@ from signalmdm.models.ingestion_run import IngestionRun
 from signalmdm.services.staging_service   import staging_service
 from signalmdm.services.ingestion_service import ingestion_service
 from signalmdm.enums import IngestionStateEnum
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,11 @@ def create_staging_task(self, run_id_str: str, tenant_id_str: str) -> dict:
         if not run:
             raise ValueError(f"IngestionRun {run_id} not found.")
 
+        delay = max(0, settings.ingestion_pipeline_stage_delay_seconds)
+        if delay:
+            logger.info("[staging_worker] Pacing %ss in RAW_LOADED (run=%s)", delay, run_id)
+            time.sleep(delay)
+
         # Create staging entities (chunked for memory efficiency)
         staging_count = staging_service.create_staging_from_run(
             db,
@@ -77,6 +84,10 @@ def create_staging_task(self, run_id_str: str, tenant_id_str: str) -> dict:
             new_state=IngestionStateEnum.STAGING_CREATED,
             performed_by="staging_worker",
         )
+
+        if delay:
+            logger.info("[staging_worker] Pacing %ss in STAGING_CREATED (run=%s)", delay, run_id)
+            time.sleep(delay)
 
         # Transition: STAGING_CREATED → COMPLETED
         ingestion_service.transition_state(

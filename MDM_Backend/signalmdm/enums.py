@@ -91,6 +91,7 @@ class IngestionStateEnum(str, Enum):
 
     Valid transitions:
         CREATED → RUNNING → RAW_LOADED → STAGING_CREATED → COMPLETED
+        RUNNING → RUNNING (additional file), RAW_LOADED → RUNNING (additional file)
         Any state → FAILED
     """
     CREATED          = "CREATED"

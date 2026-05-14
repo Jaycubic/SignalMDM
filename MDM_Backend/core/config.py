@@ -40,6 +40,16 @@ class Settings(BaseSettings):
     app_title: str = "SignalMDM API"
     app_version: str = "1.0.0"
 
+    # Ingestion — pause between state transitions so RUNNING / RAW_LOADED / STAGING_CREATED
+    # stay visible (sync path uses BackgroundTasks; Celery workers honor the same delay).
+    # Default 20s × 3 gaps ≈ 1 minute of observable pipeline before COMPLETED.
+    ingestion_pipeline_stage_delay_seconds: int = Field(
+        default=20,
+        ge=0,
+        le=120,
+        env="INGESTION_PIPELINE_STAGE_DELAY_SECONDS",
+    )
+
     # SMTP — Email OTP delivery
     smtp_host: str = Field(default="smtp.gmail.com", env="SMTP_HOST")
     smtp_port: int = Field(default=587, env="SMTP_PORT")

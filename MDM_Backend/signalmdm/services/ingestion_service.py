@@ -5,6 +5,7 @@ Business logic for IngestionRun lifecycle management.
 
 State machine enforced here:
     CREATED → RUNNING → RAW_LOADED → STAGING_CREATED → COMPLETED
+    RUNNING → RUNNING (extra file), RAW_LOADED → RUNNING (extra file before staging)
     Any state → FAILED
 """
 
@@ -26,10 +27,20 @@ from typing import Union
 
 
 # Valid forward transitions in the state machine
+# RUNNING → RUNNING: additional file while ingestion still active (same run).
+# RAW_LOADED → RUNNING: additional file before staging completes / between paced steps.
 _VALID_TRANSITIONS: dict[str, list[str]] = {
     IngestionStateEnum.CREATED:         [IngestionStateEnum.RUNNING],
-    IngestionStateEnum.RUNNING:         [IngestionStateEnum.RAW_LOADED, IngestionStateEnum.FAILED],
-    IngestionStateEnum.RAW_LOADED:      [IngestionStateEnum.STAGING_CREATED, IngestionStateEnum.FAILED],
+    IngestionStateEnum.RUNNING:         [
+        IngestionStateEnum.RUNNING,
+        IngestionStateEnum.RAW_LOADED,
+        IngestionStateEnum.FAILED,
+    ],
+    IngestionStateEnum.RAW_LOADED:      [
+        IngestionStateEnum.RUNNING,
+        IngestionStateEnum.STAGING_CREATED,
+        IngestionStateEnum.FAILED,
+    ],
     IngestionStateEnum.STAGING_CREATED: [IngestionStateEnum.COMPLETED, IngestionStateEnum.FAILED],
     IngestionStateEnum.COMPLETED:       [],
     IngestionStateEnum.FAILED:          [],

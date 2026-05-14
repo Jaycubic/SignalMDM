@@ -6,7 +6,7 @@
  * Follows the pattern established in sourceService.ts.
  */
 
-import { api, ApiError, getDeviceId } from './api';
+import { api, ApiError } from './api';
 
 // ─── Backend response shape (IngestionRunRead) ─────────────────────────────
 export interface IngestionRunRead {
@@ -28,6 +28,7 @@ export type RunStatus = "CREATED" | "RUNNING" | "RAW_LOADED" | "STAGING_CREATED"
 
 export interface IngestionRunRecord {
   id: string;
+  tenantId: string;
   sourceId: string;
   sourceName: string;
   state: RunStatus;
@@ -44,6 +45,7 @@ export interface IngestionRunRecord {
 function toIngestionRunRecord(raw: IngestionRunRead, sourceNameMap: Record<string, string> = {}): IngestionRunRecord {
   return {
     id: raw.run_id,
+    tenantId: raw.tenant_id,
     sourceId: raw.source_system_id,
     sourceName: sourceNameMap[raw.source_system_id] || raw.source_system_id,
     state: raw.state as RunStatus,
@@ -73,8 +75,9 @@ export const ingestionRunService = {
    * Fetch a single ingestion run status.
    * GET /api/v1/ingestion/{run_id}/status
    */
-  async getRunStatus(runId: string): Promise<IngestionRunRead> {
-    const res = await api.get<IngestionRunRead>(`/ingestion/${runId}/status`);
+  async getRunStatus(runId: string, tenantId?: string): Promise<IngestionRunRead> {
+    const headers = tenantId ? { 'X-Tenant-ID': tenantId } : undefined;
+    const res = await api.get<IngestionRunRead>(`/ingestion/${runId}/status`, headers);
     if (!res.data) throw new Error('Ingestion run status not found.');
     return res.data;
   },
@@ -91,33 +94,6 @@ export const ingestionRunService = {
     }, headers);
     if (!res.data) throw new Error('No data returned after starting ingestion run.');
     return toIngestionRunRecord(res.data);
-  },
-
-  /**
-   * Upload a file to an ingestion run.
-   * POST /api/v1/ingestion/{run_id}/upload
-   */
-  async uploadFile(runId: string, file: File, tenantId?: string): Promise<any> {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const headers: Record<string, string> = {
-        'X-Device-ID': getDeviceId()
-    };
-    if (tenantId) headers['X-Tenant-ID'] = tenantId;
-
-    const res = await fetch(`${(import.meta.env.VITE_API_URL as string) || 'http://localhost:8000/api/v1'}/ingestion/${runId}/upload`, {
-      method: 'POST',
-      body: formData,
-      headers: headers,
-      credentials: 'include',
-    });
-
-    if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'File upload failed');
-    }
-    return res.json();
   },
 
   /**

@@ -17,14 +17,16 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import os
+import time
 import uuid
 import csv
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Header, status
 from sqlalchemy.orm import Session
 
-from signalmdm.database import get_db
+from signalmdm.database import SessionLocal, get_db
 from signalmdm.schemas.ingestion_schema import (
     IngestionRunCreate,
     IngestionRunRead,
@@ -39,6 +41,8 @@ from signalmdm.middleware.auth import TokenPayload, require_auth
 from core.config import settings
 
 router = APIRouter(prefix="/ingestion", tags=["Ingestion"])
+
+logger = logging.getLogger(__name__)
 
 _MAX_FILE_MB = 50
 
@@ -89,6 +93,7 @@ def start_ingestion(
 )
 def upload_file(
     run_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
     db: Session = Depends(get_db),
@@ -109,7 +114,12 @@ def upload_file(
 
     # Verify run exists and is in an acceptable state
     run = ingestion_service.get_run(db, tenant_id=target_tenant, run_id=run_id)
-    if run.state not in (IngestionStateEnum.CREATED, IngestionStateEnum.RUNNING):
+    # Allow uploads while run is still accepting files (including paced RAW_LOADED window)
+    if run.state not in (
+        IngestionStateEnum.CREATED,
+        IngestionStateEnum.RUNNING,
+        IngestionStateEnum.RAW_LOADED,
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot upload to a run in state '{run.state}'.",
@@ -170,8 +180,17 @@ def upload_file(
             async_triggered = False
 
     if not async_triggered:
-        _process_synchronously(db, run_id, file_upload.file_id, target_tenant, file_bytes, file.filename or "upload")
+        # Return immediately in RUNNING; finish RAW → STAGING → COMPLETED in background with pacing
+        background_tasks.add_task(
+            _paced_sync_pipeline,
+            run_id,
+            file_upload.file_id,
+            target_tenant,
+            file_bytes,
+            file.filename or "upload",
+        )
 
+    delay = settings.ingestion_pipeline_stage_delay_seconds
     return ok(
         data={
             "run_id": str(run_id),
@@ -179,37 +198,99 @@ def upload_file(
             "filename": file.filename,
             "size_bytes": len(file_bytes),
             "async_processing": async_triggered,
+            "stage_delay_seconds": delay,
         },
-        message="File uploaded. Processing started." if async_triggered
-                else "File uploaded. Processed synchronously (Celery unavailable).",
+        message=(
+            f"File uploaded. Celery pipeline started (~{delay}s pacing between major states)."
+            if async_triggered
+            else (
+                f"File uploaded. Pipeline running in background (~{delay}s between "
+                f"RUNNING → RAW_LOADED → STAGING_CREATED → COMPLETED)."
+            )
+        ),
     )
 
 
-def _process_synchronously(
-    db: Session,
+def _paced_sync_pipeline(
     run_id: uuid.UUID,
     file_id: uuid.UUID,
     tenant_id: str,
     file_bytes: bytes,
     filename: str,
 ) -> None:
-    from signalmdm.models.ingestion_run import IngestionRun
-    run = db.query(IngestionRun).filter(IngestionRun.run_id == run_id).first()
-    if not run:
-        return
-    rows = _parse_file(file_bytes, filename)
-    record_count = raw_service.bulk_insert_raw_records(
-        db, tenant_id=tenant_id, run_id=run_id,
-        source_system_id=run.source_system_id, file_id=file_id, rows=rows,
-    )
-    ingestion_service.transition_state(db, run_id=run_id, tenant_id=tenant_id,
-        new_state=IngestionStateEnum.RAW_LOADED, record_count=record_count)
-    staging_service.create_staging_from_run(
-        db, run_id=run_id, tenant_id=tenant_id, source_system_id=run.source_system_id)
-    ingestion_service.transition_state(db, run_id=run_id, tenant_id=tenant_id,
-        new_state=IngestionStateEnum.STAGING_CREATED)
-    ingestion_service.transition_state(db, run_id=run_id, tenant_id=tenant_id,
-        new_state=IngestionStateEnum.COMPLETED)
+    """
+    Finish ingestion after HTTP response (run already RUNNING).
+
+    Inserts pauses between transitions so clients can observe each state
+    (default ~20s each stage ≈ 1 minute total before COMPLETED).
+    """
+    delay = max(0, settings.ingestion_pipeline_stage_delay_seconds)
+    db = SessionLocal()
+    try:
+        from signalmdm.models.ingestion_run import IngestionRun
+
+        time.sleep(delay)
+        run = db.query(IngestionRun).filter(IngestionRun.run_id == run_id).first()
+        if not run:
+            logger.warning("[ingestion] paced sync: run %s gone", run_id)
+            return
+
+        rows = _parse_file(file_bytes, filename)
+        record_count = raw_service.bulk_insert_raw_records(
+            db,
+            tenant_id=tenant_id,
+            run_id=run_id,
+            source_system_id=run.source_system_id,
+            file_id=file_id,
+            rows=rows,
+        )
+        ingestion_service.transition_state(
+            db,
+            run_id=run_id,
+            tenant_id=tenant_id,
+            new_state=IngestionStateEnum.RAW_LOADED,
+            record_count=record_count,
+            performed_by="sync_pipeline",
+        )
+
+        time.sleep(delay)
+        staging_service.create_staging_from_run(
+            db,
+            run_id=run_id,
+            tenant_id=tenant_id,
+            source_system_id=run.source_system_id,
+        )
+        ingestion_service.transition_state(
+            db,
+            run_id=run_id,
+            tenant_id=tenant_id,
+            new_state=IngestionStateEnum.STAGING_CREATED,
+            performed_by="sync_pipeline",
+        )
+
+        time.sleep(delay)
+        ingestion_service.transition_state(
+            db,
+            run_id=run_id,
+            tenant_id=tenant_id,
+            new_state=IngestionStateEnum.COMPLETED,
+            performed_by="sync_pipeline",
+        )
+    except Exception as exc:
+        logger.exception("[ingestion] paced sync failed run=%s: %s", run_id, exc)
+        try:
+            ingestion_service.transition_state(
+                db,
+                run_id=run_id,
+                tenant_id=tenant_id,
+                new_state=IngestionStateEnum.FAILED,
+                error_message=str(exc),
+                performed_by="sync_pipeline",
+            )
+        except Exception:
+            pass
+    finally:
+        db.close()
 
 
 def _parse_file(file_bytes: bytes, filename: str) -> list[dict]:
