@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from signalmdm.models.source_system import SourceSystem
 from signalmdm.schemas.source_schema import SourceSystemCreate
-from signalmdm.enums import OperationTypeEnum
+from signalmdm.enums import OperationTypeEnum, StatusEnum
 import signalmdm.services.audit_service as audit_svc
 
 
@@ -126,7 +126,7 @@ class SourceService:
         """Return all active source systems for the tenant (or all if platform)."""
         target_uuid = self._parse_tenant(tenant_id)
 
-        query = db.query(SourceSystem).filter(SourceSystem.is_active.is_(True))
+        query = db.query(SourceSystem)
 
         if target_uuid:
             query = query.filter(SourceSystem.tenant_id == target_uuid)
@@ -175,8 +175,9 @@ class SourceService:
         source = self.get_source(db, tenant_id, source_system_id)
         target_uuid = self._parse_tenant(tenant_id) or source.tenant_id
 
-        old_val = {"is_active": source.is_active}
+        old_val = {"is_active": source.is_active, "status": source.status}
         source.is_active = False
+        source.status = StatusEnum.DEACTIVATED.value  # Explicitly use .value string
         db.flush()
 
         audit_svc.log_action(
@@ -186,7 +187,52 @@ class SourceService:
             entity_id=source.source_system_id,
             operation_type=OperationTypeEnum.UPDATE,
             old_value=old_val,
-            new_value={"is_active": False},
+            new_value={"is_active": False, "status": "DEACTIVATED"},
+            performed_by=performed_by,
+            autocommit=False,
+        )
+
+        db.commit()
+        db.refresh(source)
+        return source
+
+
+    # ------------------------------------------------------------------
+    # Update Status
+    # ------------------------------------------------------------------
+
+    def update_source_status(
+        self,
+        db: Session,
+        tenant_id: Union[str, uuid.UUID],
+        source_system_id: uuid.UUID,
+        new_status: StatusEnum,
+        performed_by: str = "system",
+    ) -> SourceSystem:
+        """Update the status of a source system (ACTIVE, SUSPENDED, ARCHIVED, etc)."""
+        source = self.get_source(db, tenant_id, source_system_id)
+        target_uuid = self._parse_tenant(tenant_id) or source.tenant_id
+
+        old_val = {"status": source.status, "is_active": source.is_active}
+        
+        # If moving to DEACTIVATED, also set is_active=False
+        # If moving to ACTIVE, ensure is_active=True
+        if new_status == StatusEnum.DEACTIVATED:
+            source.is_active = False
+        elif new_status == StatusEnum.ACTIVE:
+            source.is_active = True
+            
+        source.status = new_status.value
+        db.flush()
+
+        audit_svc.log_action(
+            db,
+            tenant_id=target_uuid,
+            entity_name="source_systems",
+            entity_id=source.source_system_id,
+            operation_type=OperationTypeEnum.UPDATE,
+            old_value=old_val,
+            new_value={"status": source.status, "is_active": source.is_active},
             performed_by=performed_by,
             autocommit=False,
         )

@@ -67,9 +67,26 @@ export default function SourceSystems() {
 
   useEffect(() => { loadSources(); }, [loadSources]);
 
+  /* ── Status Updates ─────────────────────────────────────────────────────── */
+  const handleStatusUpdate = async (src: SourceRecord, newStatus: SourceRecord['status']) => {
+    const label = newStatus.charAt(0) + newStatus.slice(1).toLowerCase();
+    if (!window.confirm(`${label} "${src.sourceName}"?`)) return;
+    setDeactivating(src.id); // Reusing deactivating state for loading spinner
+    try {
+      const updated = await sourceService.updateSourceStatus(src.id, newStatus === 'INACTIVE' ? 'DEACTIVATED' : newStatus as any);
+      setSources(prev => prev.map(s => s.id === updated.id ? updated : s));
+      if (viewSource?.id === updated.id) setViewSource(updated);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : `Failed to ${label.toLowerCase()} source.`;
+      alert(msg);
+    } finally {
+      setDeactivating(null);
+    }
+  };
+
   /* ── Deactivate ───────────────────────────────────────────────────────── */
   const handleDeactivate = async (src: SourceRecord) => {
-    if (!window.confirm(`Deactivate "${src.sourceName}"? This action cannot be undone.`)) return;
+    if (!window.confirm(`Deactivate "${src.sourceName}"? It will no longer process new ingestion runs but will remain in the system.`)) return;
     setDeactivating(src.id);
     try {
       const updated = await sourceService.deactivateSource(src.id);
@@ -241,23 +258,50 @@ export default function SourceSystems() {
                     <td><StatusBadge status={src.status} /></td>
                     <td className="ss-date">{src.createdDate}</td>
                     <td>
-                      <div className="ss-action-row">
-                        <button
-                          className="ss-action-btn"
-                          onClick={() => setViewSource(src)}
-                        >
-                          View
-                        </button>
-                        {src.isActive && (
+                        <div className="ss-action-row">
                           <button
-                            className="ss-action-btn ss-action-btn--danger"
-                            onClick={() => handleDeactivate(src)}
-                            disabled={deactivating === src.id}
+                            className="ss-action-btn"
+                            onClick={() => setViewSource(src)}
                           >
-                            {deactivating === src.id ? '…' : 'Deactivate'}
+                            View
                           </button>
-                        )}
-                      </div>
+                          
+                          {src.status === 'ACTIVE' && (
+                            <>
+                              <button
+                                className="ss-action-btn ss-action-btn--amber"
+                                onClick={() => handleStatusUpdate(src, 'SUSPENDED')}
+                                disabled={deactivating === src.id}
+                              >
+                                Suspend
+                              </button>
+                              <button
+                                className="ss-action-btn ss-action-btn--amber"
+                                onClick={() => handleStatusUpdate(src, 'ARCHIVED')}
+                                disabled={deactivating === src.id}
+                              >
+                                Archive
+                              </button>
+                              <button
+                                className="ss-action-btn ss-action-btn--danger"
+                                onClick={() => handleDeactivate(src)}
+                                disabled={deactivating === src.id}
+                              >
+                                {deactivating === src.id ? '…' : 'Deactivate'}
+                              </button>
+                            </>
+                          )}
+
+                          {src.status !== 'ACTIVE' && (
+                            <button
+                              className="ss-action-btn ss-action-btn--primary"
+                              onClick={() => handleStatusUpdate(src, 'ACTIVE')}
+                              disabled={deactivating === src.id}
+                            >
+                              Activate
+                            </button>
+                          )}
+                        </div>
                     </td>
                   </tr>
                 ))}

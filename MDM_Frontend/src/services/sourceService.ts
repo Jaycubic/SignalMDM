@@ -29,7 +29,7 @@ export const ENTITY_TYPES = [
 export type EntityType = typeof ENTITY_TYPES[number];
 
 export const STATUS_ENUM = [
-  'ACTIVE', 'SUSPENDED', 'ARCHIVED',
+  'ACTIVE', 'SUSPENDED', 'ARCHIVED', 'DEACTIVATED',
 ] as const;
 export type StatusType = typeof STATUS_ENUM[number];
 
@@ -87,7 +87,7 @@ function mapStatus(
   isActive: boolean,
   backendStatus: string,
 ): SourceRecord['status'] {
-  if (!isActive) return 'INACTIVE';
+  if (!isActive || backendStatus === 'DEACTIVATED') return 'INACTIVE';
   if (backendStatus === 'SUSPENDED') return 'SUSPENDED';
   if (backendStatus === 'ARCHIVED') return 'ARCHIVED';
   return 'ACTIVE';
@@ -163,6 +163,16 @@ export const sourceService = {
   async deactivateSource(sourceId: string): Promise<SourceRecord> {
     const res = await api.delete<SourceSystemRead>(`/sources/${sourceId}`);
     if (!res.data) throw new Error('No data returned from server after deactivation.');
+    return toSourceRecord(res.data);
+  },
+
+  /**
+   * Update source status (Admin only).
+   * PATCH /api/v1/sources/{source_id}/status?status={new_status}
+   */
+  async updateSourceStatus(sourceId: string, status: StatusType): Promise<SourceRecord> {
+    const res = await api.patch<SourceSystemRead>(`/sources/${sourceId}/status?status=${status}`, {});
+    if (!res.data) throw new Error('No data returned from server after status update.');
     return toSourceRecord(res.data);
   },
 };

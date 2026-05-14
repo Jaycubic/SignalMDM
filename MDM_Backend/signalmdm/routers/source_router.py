@@ -21,6 +21,7 @@ from signalmdm.schemas.source_schema import SourceSystemCreate, SourceSystemRead
 from signalmdm.schemas.common import ok
 from signalmdm.services.source_service import source_service
 from signalmdm.middleware.auth import TokenPayload, require_auth, require_admin
+from signalmdm.enums import StatusEnum
 
 router = APIRouter(prefix="/sources", tags=["Source Systems"])
 
@@ -119,4 +120,28 @@ def deactivate_source(
     return ok(
         data=SourceSystemRead.model_validate(source).model_dump(),
         message="Source system deactivated.",
+    )
+
+
+@router.patch(
+    "/{source_id}/status",
+    summary="Update a source system's status (admin only)",
+)
+def update_status(
+    source_id: uuid.UUID,
+    status: StatusEnum,
+    db: Session = Depends(get_db),
+    auth: TokenPayload = Depends(require_admin),
+):
+    """Change status to ACTIVE, SUSPENDED, ARCHIVED, or DEACTIVATED."""
+    source = source_service.update_source_status(
+        db,
+        tenant_id=auth.tenant_id,
+        source_system_id=source_id,
+        new_status=status,
+        performed_by=auth.user_id,
+    )
+    return ok(
+        data=SourceSystemRead.model_validate(source).model_dump(),
+        message=f"Source system status updated to {status.value}.",
     )

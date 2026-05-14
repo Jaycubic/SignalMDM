@@ -19,9 +19,10 @@ from enum import Enum
 # ---------------------------------------------------------------------------
 
 class StatusEnum(str, Enum):
-    ACTIVE    = "ACTIVE"
-    SUSPENDED = "SUSPENDED"
-    ARCHIVED  = "ARCHIVED"
+    ACTIVE      = "ACTIVE"
+    SUSPENDED   = "SUSPENDED"
+    ARCHIVED    = "ARCHIVED"
+    DEACTIVATED = "DEACTIVATED"
 
 
 class OperationTypeEnum(str, Enum):
