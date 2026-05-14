@@ -22,6 +22,7 @@ from signalmdm.models.source_system  import SourceSystem
 from signalmdm.schemas.ingestion_schema import IngestionRunCreate
 from signalmdm.enums import IngestionStateEnum, OperationTypeEnum
 import signalmdm.services.audit_service as audit_svc
+from typing import Union
 
 
 # Valid forward transitions in the state machine
@@ -36,6 +37,19 @@ _VALID_TRANSITIONS: dict[str, list[str]] = {
 
 
 class IngestionService:
+    def _parse_tenant(self, tenant_id: Union[str, uuid.UUID]) -> Optional[uuid.UUID]:
+        """Convert string/uuid to UUID object. Returns None if 'platform'."""
+        if tenant_id == "platform":
+            return None
+        if isinstance(tenant_id, uuid.UUID):
+            return tenant_id
+        try:
+            return uuid.UUID(tenant_id)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid tenant_id format: {tenant_id}",
+            )
 
     # ------------------------------------------------------------------
     # Create
@@ -44,7 +58,7 @@ class IngestionService:
     def create_run(
         self,
         db: Session,
-        tenant_id: uuid.UUID,
+        tenant_id: Union[str, uuid.UUID],
         data: IngestionRunCreate,
         performed_by: str = "system",
     ) -> IngestionRun:
@@ -53,11 +67,18 @@ class IngestionService:
 
         Validates that the referenced SourceSystem belongs to this tenant.
         """
+        target_uuid = self._parse_tenant(tenant_id)
+        if target_uuid is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="SuperAdmin must provide a specific tenant_id (X-Tenant-ID) for ingestion.",
+            )
+
         source = (
             db.query(SourceSystem)
             .filter(
                 SourceSystem.source_system_id == data.source_system_id,
-                SourceSystem.tenant_id == tenant_id,
+                SourceSystem.tenant_id == target_uuid,
                 SourceSystem.is_active.is_(True),
             )
             .first()
@@ -70,7 +91,7 @@ class IngestionService:
 
         run = IngestionRun(
             run_id=uuid.uuid4(),
-            tenant_id=tenant_id,
+            tenant_id=target_uuid,
             source_system_id=data.source_system_id,
             state=IngestionStateEnum.CREATED,
             triggered_by=data.triggered_by,
@@ -80,7 +101,7 @@ class IngestionService:
 
         audit_svc.log_action(
             db,
-            tenant_id=tenant_id,
+            tenant_id=target_uuid,
             entity_name="ingestion_runs",
             entity_id=run.run_id,
             operation_type=OperationTypeEnum.INSERT,
@@ -100,24 +121,41 @@ class IngestionService:
     def get_run(
         self,
         db: Session,
-        tenant_id: uuid.UUID,
+        tenant_id: Union[str, uuid.UUID],
         run_id: uuid.UUID,
     ) -> IngestionRun:
         """Fetch a run; raise 404 if not found for this tenant."""
-        run = (
-            db.query(IngestionRun)
-            .filter(
-                IngestionRun.run_id == run_id,
-                IngestionRun.tenant_id == tenant_id,
-            )
-            .first()
-        )
+        target_uuid = self._parse_tenant(tenant_id)
+        
+        query = db.query(IngestionRun).filter(IngestionRun.run_id == run_id)
+        if target_uuid:
+            query = query.filter(IngestionRun.tenant_id == target_uuid)
+            
+        run = query.first()
         if not run:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Ingestion run {run_id} not found.",
             )
         return run
+
+    def list_runs(
+        self,
+        db: Session,
+        tenant_id: Union[str, uuid.UUID],
+        skip: int = 0,
+        limit: int = 20,
+    ) -> list[IngestionRun]:
+        """List ingestion runs scoped to the tenant (or all if platform)."""
+        target_uuid = self._parse_tenant(tenant_id)
+        query = db.query(IngestionRun)
+        if target_uuid:
+            query = query.filter(IngestionRun.tenant_id == target_uuid)
+
+        return (
+            query.order_by(IngestionRun.created_at.desc())
+            .offset(skip).limit(limit).all()
+        )
 
     # ------------------------------------------------------------------
     # State transition
@@ -127,7 +165,7 @@ class IngestionService:
         self,
         db: Session,
         run_id: uuid.UUID,
-        tenant_id: uuid.UUID,
+        tenant_id: Union[str, uuid.UUID],
         new_state: str,
         error_message: Optional[str] = None,
         performed_by: str = "system",
@@ -169,7 +207,7 @@ class IngestionService:
 
         audit_svc.log_action(
             db,
-            tenant_id=tenant_id,
+            tenant_id=self._parse_tenant(tenant_id) or run.tenant_id,
             entity_name="ingestion_runs",
             entity_id=run.run_id,
             operation_type=OperationTypeEnum.UPDATE,

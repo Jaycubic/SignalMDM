@@ -11,9 +11,6 @@
 
 import { api, ApiError } from './api';
 
-// ─── Re-export for consumers ───────────────────────────────────────────────
-export { ApiError };
-
 // ─── Backend enum constants (mirrors signalmdm/enums.py) ───────────────────
 
 export const SOURCE_TYPES = [
@@ -60,9 +57,11 @@ export interface SourceSystemRead {
  */
 export interface SourceRecord {
   id: string;                          // ← source_system_id
+  tenantId: string;                    // ← tenant_id
   sourceName: string;                  // ← source_name
   sourceCode: string;                  // ← source_code (lowercase slug)
   sourceType: string;                  // ← source_type
+  connection_type: string;             // ← connection_type (Fix: was missing in some views)
   connectionType: string;              // ← connection_type
   configJson: Record<string, unknown>; // ← config_json (never null here)
   supportedEntities: string[];         // ← config_json.supported_entities
@@ -103,9 +102,11 @@ function toSourceRecord(raw: SourceSystemRead): SourceRecord {
 
   return {
     id: raw.source_system_id,
+    tenantId: raw.tenant_id,
     sourceName: raw.source_name,
     sourceCode: raw.source_code,
     sourceType: raw.source_type,
+    connection_type: raw.connection_type,
     connectionType: raw.connection_type,
     configJson: cfg,
     supportedEntities,
@@ -123,9 +124,11 @@ export const sourceService = {
    * Fetch all active source systems for the authenticated tenant.
    * GET /api/v1/sources/?skip=<skip>&limit=<limit>
    */
-  async listSources(skip = 0, limit = 100): Promise<SourceRecord[]> {
+  async listSources(skip = 0, limit = 100, tenantId?: string): Promise<SourceRecord[]> {
+    const headers = tenantId ? { 'X-Tenant-ID': tenantId } : undefined;
     const res = await api.get<SourceSystemRead[]>(
       `/sources/?skip=${skip}&limit=${limit}`,
+      headers
     );
     return (res.data ?? []).map(toSourceRecord);
   },
@@ -163,3 +166,6 @@ export const sourceService = {
     return toSourceRecord(res.data);
   },
 };
+
+// Re-export for consumers
+export { ApiError };

@@ -70,11 +70,16 @@ def register_source(
 def list_sources(
     skip: int = 0,
     limit: int = 50,
+    x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
     db: Session = Depends(get_db),
     auth: TokenPayload = Depends(require_auth),
 ):
     """Return all active source systems scoped to the authenticated tenant."""
-    sources = source_service.list_sources(db, tenant_id=auth.tenant_id, skip=skip, limit=limit)
+    target_tenant = auth.tenant_id
+    if auth.tenant_id == "platform" and x_tenant_id:
+        target_tenant = x_tenant_id
+
+    sources = source_service.list_sources(db, tenant_id=target_tenant, skip=skip, limit=limit)
     return ok(
         data=[SourceSystemRead.model_validate(s).model_dump() for s in sources],
         message=f"{len(sources)} source system(s) found.",

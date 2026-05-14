@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     # Celery / Redis
     redis_url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
+    celery_enabled: bool = Field(default=True, env="CELERY_ENABLED")
 
     # App
     app_env: str = Field(default="development", env="APP_ENV")

@@ -21,7 +21,7 @@ import os
 import uuid
 import csv
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header, status
 from sqlalchemy.orm import Session
 
 from signalmdm.database import get_db
@@ -49,27 +49,33 @@ _MAX_FILE_MB = 50
 
 @router.post(
     "/start",
-    summary="Create a new ingestion run",
+    summary="Initiate a new ingestion run",
     status_code=status.HTTP_201_CREATED,
 )
 def start_ingestion(
     body: IngestionRunCreate,
+    x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
     db: Session = Depends(get_db),
     auth: TokenPayload = Depends(require_auth),
 ):
     """
-    Create a new IngestionRun in **CREATED** state.
-    Returns the `run_id` UUID — use it for subsequent upload and status calls.
+    Start a new run for a specific SourceSystem.
+    
+    - If logged in as SuperAdmin (platform), must specify X-Tenant-ID.
     """
+    target_tenant = auth.tenant_id
+    if auth.tenant_id == "platform" and x_tenant_id:
+        target_tenant = x_tenant_id
+
     run = ingestion_service.create_run(
         db,
-        tenant_id=auth.tenant_id,
+        tenant_id=target_tenant,
         data=body,
         performed_by=auth.user_id,
     )
     return ok(
         data=IngestionRunRead.model_validate(run).model_dump(),
-        message="Ingestion run created. Use the run_id to upload files.",
+        message="Ingestion run started.",
     )
 
 
@@ -84,6 +90,7 @@ def start_ingestion(
 def upload_file(
     run_id: uuid.UUID,
     file: UploadFile = File(...),
+    x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
     db: Session = Depends(get_db),
     auth: TokenPayload = Depends(require_auth),
 ):
@@ -96,10 +103,12 @@ def upload_file(
     3. Transition run → RAW_LOADED
     4. Chain staging worker → STAGING_CREATED → COMPLETED
     """
-    tenant_id = auth.tenant_id
+    target_tenant = auth.tenant_id
+    if auth.tenant_id == "platform" and x_tenant_id:
+        target_tenant = x_tenant_id
 
     # Verify run exists and is in an acceptable state
-    run = ingestion_service.get_run(db, tenant_id=tenant_id, run_id=run_id)
+    run = ingestion_service.get_run(db, tenant_id=target_tenant, run_id=run_id)
     if run.state not in (IngestionStateEnum.CREATED, IngestionStateEnum.RUNNING):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -128,7 +137,7 @@ def upload_file(
     # Persist file metadata
     file_upload = raw_service.save_file_upload(
         db,
-        tenant_id=tenant_id,
+        tenant_id=target_tenant,
         run_id=run_id,
         original_filename=file.filename or "upload",
         stored_path=stored_path,
@@ -140,24 +149,28 @@ def upload_file(
     ingestion_service.transition_state(
         db,
         run_id=run_id,
-        tenant_id=tenant_id,
+        tenant_id=target_tenant,
         new_state=IngestionStateEnum.RUNNING,
         file_count=run.file_count + 1,
         performed_by=auth.user_id,
     )
 
-    # Trigger async Celery worker
-    try:
-        from signalmdm.workers.raw_worker import process_raw_upload
-        process_raw_upload.delay(
-            str(run_id),
-            str(file_upload.file_id),
-            str(tenant_id),
-        )
-        async_triggered = True
-    except Exception:
-        async_triggered = False
-        _process_synchronously(db, run_id, file_upload.file_id, tenant_id, file_bytes, file.filename or "upload")
+    # Trigger processing
+    async_triggered = False
+    if settings.celery_enabled:
+        try:
+            from signalmdm.workers.raw_worker import process_raw_upload
+            process_raw_upload.delay(
+                str(run_id),
+                str(file_upload.file_id),
+                str(target_tenant),
+            )
+            async_triggered = True
+        except Exception:
+            async_triggered = False
+
+    if not async_triggered:
+        _process_synchronously(db, run_id, file_upload.file_id, target_tenant, file_bytes, file.filename or "upload")
 
     return ok(
         data={
@@ -176,7 +189,7 @@ def _process_synchronously(
     db: Session,
     run_id: uuid.UUID,
     file_id: uuid.UUID,
-    tenant_id: uuid.UUID,
+    tenant_id: str,
     file_bytes: bytes,
     filename: str,
 ) -> None:
@@ -217,13 +230,18 @@ def _parse_file(file_bytes: bytes, filename: str) -> list[dict]:
 )
 def get_status(
     run_id: uuid.UUID,
+    x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
     db: Session = Depends(get_db),
     auth: TokenPayload = Depends(require_auth),
 ):
     """Poll the current state of an ingestion run."""
-    run = ingestion_service.get_run(db, tenant_id=auth.tenant_id, run_id=run_id)
+    target_tenant = auth.tenant_id
+    if auth.tenant_id == "platform" and x_tenant_id:
+        target_tenant = x_tenant_id
+        
+    run = ingestion_service.get_run(db, tenant_id=target_tenant, run_id=run_id)
     staging_count = staging_service.count_staging_for_run(
-        db, run_id=run_id, tenant_id=auth.tenant_id)
+        db, run_id=run_id, tenant_id=target_tenant)
     return ok(
         data=IngestionStatusRead(
             run_id=run.run_id,
@@ -239,6 +257,32 @@ def get_status(
     )
 
 
+@router.post(
+    "/{run_id}/cancel",
+    summary="Cancel an ongoing ingestion run",
+)
+def cancel_run(
+    run_id: uuid.UUID,
+    x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
+    db: Session = Depends(get_db),
+    auth: TokenPayload = Depends(require_auth),
+):
+    """Transition a run to FAILED state manually."""
+    target_tenant = auth.tenant_id
+    if auth.tenant_id == "platform" and x_tenant_id:
+        target_tenant = x_tenant_id
+        
+    run = ingestion_service.transition_state(
+        db,
+        run_id=run_id,
+        tenant_id=target_tenant,
+        new_state=IngestionStateEnum.FAILED,
+        error_message="Cancelled by user",
+        performed_by=auth.user_id,
+    )
+    return ok(message="Ingestion run cancelled.")
+
+
 @router.get(
     "/",
     summary="List all ingestion runs for the authenticated tenant",
@@ -246,18 +290,17 @@ def get_status(
 def list_runs(
     skip: int = 0,
     limit: int = 20,
+    x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
     db: Session = Depends(get_db),
     auth: TokenPayload = Depends(require_auth),
 ):
     """List recent ingestion runs for the tenant, newest first."""
-    from signalmdm.models.ingestion_run import IngestionRun
-    runs = (
-        db.query(IngestionRun)
-        .filter(IngestionRun.tenant_id == auth.tenant_id)
-        .order_by(IngestionRun.created_at.desc())
-        .offset(skip).limit(limit).all()
-    )
+    target_tenant = auth.tenant_id
+    if auth.tenant_id == "platform" and x_tenant_id:
+        target_tenant = x_tenant_id
+
+    runs = ingestion_service.list_runs(db, tenant_id=target_tenant, skip=skip, limit=limit)
     return ok(
         data=[IngestionRunRead.model_validate(r).model_dump() for r in runs],
-        message=f"{len(runs)} run(s) found.",
+        message=f"{len(runs)} ingestion run(s) found.",
     )
