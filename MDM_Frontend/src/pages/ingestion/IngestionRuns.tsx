@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import '../../styles/theme.css';
 import '../../styles/IngestionRuns.css';
-import { ingestionRunService, ApiError, type IngestionRunRecord, type RunStatus } from '../../services/ingestionRunService';
+import { ingestionRunService, type IngestionRunRecord, type RunStatus } from '../../services/ingestionRunService';
 import { sourceService, type SourceRecord } from '../../services/sourceService';
 import { tenantService, type TenantRecord } from '../../services/tenantService';
 import { authService } from '../../services/authService';
@@ -17,6 +17,10 @@ interface TimelineItem {
     active?: boolean;
     fail?: boolean;
 }
+
+type EntityType = "CUSTOMER" | "SUPPLIER" | "PRODUCT" | "ACCOUNT" | "ASSET" | "LOCATION";
+type RunType = "INITIAL_LOAD" | "DELTA_LOAD" | "REPROCESS" | "TEST_LOAD";
+type TriggerType = "MANUAL" | "SCHEDULED" | "API" | "EVENT";
 
 interface RunError {
     code: string;
@@ -50,8 +54,6 @@ const STATUS_LABEL: Record<RunStatus, string> = {
     STAGING_CREATED: "Staging Created", FAILED: "Failed", COMPLETED: "Completed",
 };
 
-const MOCK_RUNS: IngestionRunRecord[] = [];
-
 const RUN_TIMELINES: Record<RunStatus, TimelineItem[]> = {
     COMPLETED: [{ label: "Run Created", ts: "Done", done: true }, { label: "Processing Completed", ts: "Done", done: true }],
     RUNNING: [{ label: "Run Created", ts: "Done", done: true }, { label: "Processing Records…", ts: "In progress", active: true }],
@@ -69,23 +71,6 @@ function StatusBadge({ status }: { status: RunStatus }): React.ReactElement {
         <span className={`ir-status ir-status--${status}`}>
             {STATUS_LABEL[status] || status}
         </span>
-    );
-}
-
-interface ProgressBarProps {
-    loaded: number;
-    total: number;
-}
-
-function ProgressBar({ loaded, total }: ProgressBarProps): React.ReactElement {
-    const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
-    return (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 100 }}>
-            <div style={{ flex: 1, height: 5, background: "var(--surface-3)", borderRadius: 99, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${pct}%`, background: "var(--blue-500)", borderRadius: 99, transition: "width .4s ease" }} />
-            </div>
-            <span style={{ fontSize: 11.5, color: "var(--text-muted)", minWidth: 30 }}>{pct}%</span>
-        </div>
     );
 }
 
@@ -404,7 +389,6 @@ function IngestionRuns(): React.ReactElement {
     const [search, setSearch] = useState<string>("");
     const [filterStatus, setFilterStatus] = useState<string>("ALL");
     const [filterSource, setFilterSource] = useState<string>("ALL");
-    const [_lastRefresh, setLastRefresh] = useState<Date>(new Date());
     const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const loadData = useCallback(async () => {
