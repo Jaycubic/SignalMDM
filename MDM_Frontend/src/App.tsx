@@ -8,6 +8,7 @@ import RawLanding from './pages/rawlanding/RawLanding';
 import UploadData from './pages/upload/UploadData';
 import StagingRecords from './pages/staging/StagingRecords';
 import Tenants from './pages/admin/Tenants';
+import SystemHealth from './pages/admin/SystemHealth';
 import DevSetup from './pages/DevSetup';
 import './index.css';
 
@@ -52,7 +53,7 @@ export default function App() {
             <Route path="staging"      element={<StagingRecords />} />
             <Route path="tenants"      element={<Tenants />} />
             <Route path="api-logs"     element={<Placeholder title="API Logs — Coming Soon" />} />
-            <Route path="system-health" element={<Placeholder title="System Health — Coming Soon" />} />
+            <Route path="system-health" element={<SystemHealth />} />
             <Route path="dev-setup"    element={<DevSetup />} />
             <Route path="*"            element={<Navigate to="/" replace />} />
           </Route>
