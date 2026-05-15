@@ -12,11 +12,13 @@ RULES:
 from __future__ import annotations
 
 import uuid
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
+from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Session
 
 from signalmdm.models.audit import AuditLog
+from signalmdm.models.tenant import Tenant
 from signalmdm.enums import OperationTypeEnum
 
 
@@ -71,3 +73,78 @@ def log_action(
         db.commit()
         db.refresh(log)
     return log
+
+
+def _parse_tenant_id(tenant_id: Union[str, uuid.UUID]) -> Optional[uuid.UUID]:
+    if tenant_id == "platform":
+        return None
+    if isinstance(tenant_id, uuid.UUID):
+        return tenant_id
+    return uuid.UUID(str(tenant_id))
+
+
+def list_api_logs_page(
+    db: Session,
+    *,
+    tenant_id: Union[str, uuid.UUID],
+    skip: int = 0,
+    limit: int = 100,
+    operation_type: Optional[str] = None,
+    entity_name: Optional[str] = None,
+    search: Optional[str] = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """
+    Paginated audit_log rows for the API Logs admin screen (newest first).
+    """
+    tid = _parse_tenant_id(tenant_id)
+    q = db.query(AuditLog, Tenant.tenant_name).outerjoin(
+        Tenant, Tenant.tenant_id == AuditLog.tenant_id
+    )
+    if tid is not None:
+        q = q.filter(AuditLog.tenant_id == tid)
+    if operation_type and operation_type.strip():
+        q = q.filter(AuditLog.operation_type == operation_type.strip())
+    if entity_name and entity_name.strip():
+        q = q.filter(AuditLog.entity_name == entity_name.strip())
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        q = q.filter(
+            or_(
+                cast(AuditLog.audit_id, String).ilike(term),
+                cast(AuditLog.entity_id, String).ilike(term),
+                AuditLog.entity_name.ilike(term),
+                AuditLog.operation_type.ilike(term),
+                AuditLog.performed_by.ilike(term),
+                AuditLog.source_ip.ilike(term),
+                AuditLog.trace_id.ilike(term),
+                cast(AuditLog.old_value, String).ilike(term),
+                cast(AuditLog.new_value, String).ilike(term),
+            )
+        )
+
+    total = q.count()
+    rows = (
+        q.order_by(AuditLog.performed_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    out: list[dict[str, Any]] = []
+    for log, tenant_name in rows:
+        out.append(
+            {
+                "audit_id": log.audit_id,
+                "tenant_id": log.tenant_id,
+                "tenant_name": tenant_name,
+                "entity_name": log.entity_name,
+                "entity_id": log.entity_id,
+                "operation_type": log.operation_type,
+                "old_value": log.old_value,
+                "new_value": log.new_value,
+                "performed_by": log.performed_by,
+                "performed_at": log.performed_at,
+                "source_ip": log.source_ip,
+                "trace_id": log.trace_id,
+            }
+        )
+    return out, total
