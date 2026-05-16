@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -57,12 +57,24 @@ class AdminProfile(BaseModel):
     admin_id:   uuid.UUID       = Field(..., description="Admin UUID.")
     email:      str             = Field(..., description="Admin email.")
     username:   str             = Field(..., description="Display name.")
-    role:       str             = Field(default="admin", description="Always 'admin' for platform admins.")
-    tenant_id:  str             = Field(default="platform", description="Identifier of the tenant (platform for super admins).")
+    role:       str             = Field(default="admin", description="Role key, e.g. 'super_admin', 'admin'.")
+    tenant_id:  str             = Field(default="platform", description="'platform' for platform admins.")
     is_active:  bool
     last_login_at: Optional[datetime]
 
     model_config = {"from_attributes": True}
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def coerce_role(cls, v: object) -> str:
+        """
+        When loading from ORM, PlatformAdmin.role is a PlatformRole relationship
+        object (not a string). Extract role_key; fall back to 'admin'.
+        """
+        if isinstance(v, str):
+            return v
+        role_key = getattr(v, "role_key", None)
+        return role_key if role_key else "admin"
 
 
 class LoginResponse(BaseModel):

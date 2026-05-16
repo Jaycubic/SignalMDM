@@ -1,42 +1,42 @@
-// MDM_Frontend/src/layouts/MainLayout.tsx
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import TenantScopeBar from '../components/TenantScopeBar';
 import './MainLayout.css';
+
 
 interface NavItem  { label: string; path: string; icon: string; roles: string[]; }
 interface NavGroup { group: string; items: NavItem[]; }
 
-// All items marked 'admin' for Phase 1 — extend roles array to restrict later
 const NAV: NavGroup[] = [
   {
     group: 'Main',
     items: [
-      { label: 'Dashboard',       path: '/',            icon: '⊞', roles: ['admin'] },
+      { label: 'Dashboard',       path: '/',            icon: '⊞', roles: ['super_admin','admin','data_architect','data_manager','executive'] },
     ],
   },
   {
     group: 'Foundation',
     items: [
-      { label: 'Source Systems',  path: '/sources',     icon: '⬡', roles: ['admin'] },
-      { label: 'Ingestion Runs',  path: '/ingestion',   icon: '↻', roles: ['admin'] },
-      { label: 'Upload Data',     path: '/upload',      icon: '⬆', roles: ['admin'] },
-      { label: 'Raw Landing',     path: '/raw-landing', icon: '⬇', roles: ['admin'] },
-      { label: 'Staging Records', path: '/staging',     icon: '◫', roles: ['admin'] },
+      { label: 'Source Systems',  path: '/sources',     icon: '⬡', roles: ['super_admin','admin','data_architect'] },
+      { label: 'Ingestion Runs',  path: '/ingestion',   icon: '↻', roles: ['super_admin','admin','data_architect','data_manager'] },
+      { label: 'Upload Data',     path: '/upload',      icon: '⬆', roles: ['super_admin','admin','data_architect'] },
+      { label: 'Raw Landing',     path: '/raw-landing', icon: '⬇', roles: ['super_admin','admin','data_architect','data_manager'] },
+      { label: 'Staging Records', path: '/staging',     icon: '◫', roles: ['super_admin','admin','data_architect','data_manager'] },
     ],
   },
   {
     group: 'Admin',
     items: [
-      { label: 'API Logs',        path: '/api-logs',      icon: '≡', roles: ['admin'] },
-      { label: 'System Health',   path: '/system-health', icon: '♥', roles: ['admin'] },
+      { label: 'API Logs',        path: '/api-logs',      icon: '≡', roles: ['super_admin','admin'] },
+      { label: 'System Health',   path: '/system-health', icon: '♥', roles: ['super_admin','admin'] },
     ],
   },
   {
     group: 'Platform',
     items: [
-      { label: 'Tenants',        path: '/tenants',        icon: '🏢', roles: ['admin'] },
-      { label: 'Platform Users', path: '/platform-rbac',  icon: '👥', roles: ['admin'] },
+      { label: 'Tenants',         path: '/tenants',        icon: '🏢', roles: ['super_admin','admin'] },
+      { label: 'Platform Users',  path: '/platform-rbac',  icon: '👥', roles: ['super_admin','admin'] },
     ],
   },
 ];
@@ -56,14 +56,15 @@ export default function MainLayout() {
     ? (admin.username ?? admin.email).slice(0, 2).toUpperCase()
     : '??';
 
-  // Filter nav items by current role and tenant
-  const userRole = admin?.role ?? 'admin';
+  // Determine role — platform admins get full nav based on their role_key
+  const userRole    = admin?.role ?? 'executive';
+  const isPlatform  = admin?.tenant_id === 'platform';
+
   const visibleNav = NAV.map(group => {
-    // Platform group is only for SuperAdmin (tenant_id === 'platform')
-    if (group.group === 'Platform' && admin?.tenant_id !== 'platform') {
+    // Platform group is only for platform tenant users
+    if (group.group === 'Platform' && !isPlatform) {
       return { ...group, items: [] };
     }
-
     return {
       ...group,
       items: group.items.filter(item => item.roles.includes(userRole)),
@@ -153,6 +154,7 @@ export default function MainLayout() {
             <span className="mdm-topbar__env-badge">PHASE 1 — FOUNDATION</span>
           </div>
           <div className="mdm-topbar__right">
+            {isPlatform && <TenantScopeBar />}
             {admin && (
               <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                 {admin.email}

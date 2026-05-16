@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, ProtectedRoute } from './context/AuthContext';
+import { TenantConfigProvider } from './context/TenantConfigContext';
 import MainLayout from './layouts/MainLayout';
 import Login from './pages/Login';
 import SourceSystems from './pages/source/SourceSystems';
@@ -42,8 +43,10 @@ export default function App() {
           <Route
             path="/"
             element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <MainLayout />
+              <ProtectedRoute allowedRoles={['super_admin', 'admin', 'data_architect', 'data_manager', 'executive']}>
+                <TenantConfigProvider>
+                  <MainLayout />
+                </TenantConfigProvider>
               </ProtectedRoute>
             }
           >

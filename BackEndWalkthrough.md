@@ -8,9 +8,9 @@ SignalMDM is a Master Data Management platform that collects and organizes busin
 ## 2. What Exists
 The system is built and operational with the following components:
 - **APIs:** Endpoints to manage tenants, register data sources, and trigger data ingestion.
-- **Models:** Database blueprints for tracking organizations, sources, and every piece of data uploaded.
+- **Models:** Database blueprints for tracking organizations, sources, and every piece of data uploaded. Now includes a **Platform RBAC** system for managing global administrators and their permissions.
 - **Services:** The business logic connecting APIs to the database.
-- **Security Middleware:** A two-layer security system — HTTP headers + encrypted JWT authentication on every protected endpoint.
+- **Security Middleware:** A two-layer security system — HTTP headers + encrypted JWT authentication on every protected endpoint, now enhanced with granular **Role-Based Access Control (RBAC)**.
 - **Workers:** Background task processors (Celery) to handle heavy data parsing asynchronously.
 - **File Storage:** A local directory (`storage/uploads/`) to save uploaded CSV/JSON files.
 - **Async Processing:** A system that processes files in the background while immediately returning a response to the user.
@@ -25,10 +25,10 @@ The codebase is organized into specific folders:
   - `config.py`: All environment variables as typed settings (database URL, JWT, AES key, Redis URL).
   - `redis_client.py`: **Centralized Redis connection pool** — one shared instance for the whole application.
 - `signalmdm/`: The heart of the application, containing all business logic.
-  - `models/`: Database table definitions (how data is structured).
-  - `routers/`: API endpoints (URLs users interact with). All protected routes call the auth middleware.
+  - `models/`: Database table definitions (how data is structured). Includes `platform_role.py` for global RBAC.
+  - `routers/`: API endpoints (URLs users interact with). New `platform_rbac_router.py` handles user and role management.
   - `schemas/`: Rules for what data the APIs accept and return.
-  - `services/`: The brains of the operation, executing logic for the routers.
+  - `services/`: The brains of the operation, executing logic for the routers. New `platform_rbac_service.py` manages roles and permissions.
   - `middleware/`: **Security layer** — token encryption/decryption, device fingerprinting, JWT validation.
   - `workers/`: Background jobs for processing files.
 - `storage/uploads/`: The physical location where uploaded files are saved, organized by `run_id`.
@@ -43,7 +43,7 @@ The codebase is organized into specific folders:
 - **Redis Pool (`core/redis_client.py`):** Single shared Redis connection pool. Called by auth middleware for token revocation checks, and available to workers for caching.
 
 **Models & Schemas**
-- **Models (`signalmdm/models/*.py`):** Define tables like `source_systems`, `raw_records`, `audit_log`.
+- **Models (`signalmdm/models/*.py`):** Define tables like `source_systems`, `raw_records`, `platform_role`, and `platform_permission`.
 - **Schemas (`signalmdm/schemas/*.py`):** Pydantic v2 models that validate request bodies and shape API responses.
 
 **Routers**
@@ -54,7 +54,7 @@ The codebase is organized into specific folders:
 
 **Security Middleware**
 - **`signalmdm/middleware/token_utils.py`:** All cryptographic building blocks — AES-256-CBC encrypt/decrypt, SHA-256 device fingerprint hashing, JWT creation/decoding, and Redis token blacklist operations.
-- **`signalmdm/middleware/auth.py`:** The FastAPI dependency (`require_auth`) that runs the full 5-step security check on every protected request. Also provides `require_admin` and `require_role()` guards.
+- **`signalmdm/middleware/auth.py`:** The FastAPI dependency (`require_auth`) that runs the full 5-step security check on every protected request. Also provides `require_admin`, `is_super_admin`, and `require_role()` guards to enforce Platform RBAC at the route level.
 
 **Workers**
 - **Workers (`signalmdm/workers/*.py`):** Independent Celery tasks that parse files and insert large amounts of data into the database.
@@ -129,19 +129,18 @@ After `require_auth` succeeds, additional guards can restrict by role:
 
 ### Which Endpoints Are Protected?
 
-| Endpoint | Auth Required | Role |
+| Endpoint | Auth Required | Role / Requirement |
 |----------|--------------|------|
 | `POST /api/v1/tenants/` | No (public bootstrap) | — |
 | `GET /api/v1/tenants/` | Yes | admin only |
-| `GET /api/v1/tenants/{id}` | Yes | any authenticated |
+| `GET /api/v1/platform/roles` | Yes | admin+ (platform tenant) |
+| `POST /api/v1/platform/roles` | Yes | super_admin only |
+| `GET /api/v1/platform/users` | Yes | admin+ (platform tenant) |
+| `POST /api/v1/platform/users` | Yes | admin+ (platform tenant) |
 | `POST /api/v1/sources/register` | Yes | any authenticated |
 | `GET /api/v1/sources/` | Yes | any authenticated |
-| `GET /api/v1/sources/{id}` | Yes | any authenticated |
 | `DELETE /api/v1/sources/{id}` | Yes | admin only |
 | `POST /api/v1/ingestion/start` | Yes | any authenticated |
-| `POST /api/v1/ingestion/{id}/upload` | Yes | any authenticated |
-| `GET /api/v1/ingestion/{id}/status` | Yes | any authenticated |
-| `GET /api/v1/ingestion/` | Yes | any authenticated |
 | `GET /` and `GET /health` | No | — |
 
 ---
@@ -186,11 +185,14 @@ HTTP Request
 
 ## 8. Database
 The system uses the following key tables:
-- **`tenant`**: Represents the customer/organization using the system. All other tables link back to this for security (multi-tenancy). The `tenant_id` is now extracted from the verified JWT — not from an open header.
+- **`tenant`**: Represents the customer/organization using the system. All other tables link back to this for security (multi-tenancy).
+- **`platform_admin`**: Global administrators. Enhanced with `role_id`, `full_name`, and account status (`is_blocked`).
+- **`platform_role`**: Defines global roles like `super_admin`, `data_architect`, and `data_manager`.
+- **`platform_permission`**: Defines granular access to screens (e.g., `sources`) and features (e.g., `delete`).
+- **`platform_role_permission`**: Junction table mapping roles to their specific feature permissions.
 - **`source_systems`**: Stores registered data origins (e.g., ERP, CRM).
-- **`ingestion_runs`**: Tracks a specific upload session and its current state (`CREATED → RUNNING → RAW_LOADED → STAGING_CREATED → COMPLETED`).
-- **`file_uploads`**: Stores metadata about uploaded files (name, size, disk location).
-- **`raw_records`**: Stores the exact, unmodified data from the files, row by row as JSON. Immutable after insert.
+- **`ingestion_runs`**: Tracks a specific upload session and its current state.
+- **`raw_records`**: Stores the exact, unmodified data from the files.
 - **`staging_entities`**: A copy of the raw data, prepared and waiting for Phase 2 processing.
 - **`audit_log`**: An immutable history of every action taken in the system.
 

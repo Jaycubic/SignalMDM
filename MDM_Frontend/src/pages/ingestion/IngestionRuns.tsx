@@ -5,8 +5,8 @@ import '../../styles/IngestionRuns.css';
 import { ingestionRunService, type IngestionRunRecord, type RunStatus } from '../../services/ingestionRunService';
 import { uploadService } from '../../services/uploadService';
 import { sourceService, type SourceRecord } from '../../services/sourceService';
-import { tenantService, type TenantRecord } from '../../services/tenantService';
 import { authService } from '../../services/authService';
+import { useTenantConfig } from '../../context/TenantConfigContext';
 
 /* ═══════════════════════════════════════════════════════════════
    TYPES
@@ -82,7 +82,7 @@ interface StartIngestionModalProps {
     onClose: () => void;
     onStart: (data: StartIngestionData) => void;
     sources: SourceRecord[];
-    tenants: TenantRecord[];
+    tenants: { id: string; tenantName: string }[];
     isSuperAdmin: boolean;
 }
 
@@ -378,11 +378,10 @@ function RunDetailsDrawer({ run, onClose }: RunDetailsDrawerProps): React.ReactE
    INGESTION RUNS PAGE
 ═══════════════════════════════════════════════════════════════ */
 function IngestionRuns(): React.ReactElement {
+    const { activeTenantId, activeTenantName, mode: tenantMode } = useTenantConfig();
     const [runs, setRuns] = useState<IngestionRunRecord[]>([]);
     const [sources, setSources] = useState<SourceRecord[]>([]);
-    const [tenants, setTenants] = useState<TenantRecord[]>([]);
     const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
-    const [selectedTenantId, setSelectedTenantId] = useState<string>("ALL");
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
     const [showModal, setShowModal] = useState<boolean>(false);
@@ -396,30 +395,18 @@ function IngestionRuns(): React.ReactElement {
         setLoading(true);
         setError(null);
         try {
-            // 1. Determine if SuperAdmin (best effort)
             const adminInfo = authService.getAdminInfoFromCookie();
-            const superAdmin = adminInfo?.tenant_id === 'platform' || adminInfo?.role === 'admin';
+            const superAdmin = adminInfo?.tenant_id === 'platform';
             setIsSuperAdmin(superAdmin);
 
-            // 2. Always try to fetch tenants (backend will block if not authorized)
-            try {
-                const tenantData = await tenantService.listTenants();
-                setTenants(tenantData);
-                if (tenantData.length > 0) setIsSuperAdmin(true); // Confirmation
-            } catch (tErr) {
-                // Silently fail tenant fetch for standard users
-            }
+            const tId = activeTenantId ?? undefined;
 
-            const tId = selectedTenantId === "ALL" ? undefined : selectedTenantId;
-            (window as any).activeTenantId = tId; 
-
-            // 3. Load sources and runs
             const srcData = await sourceService.listSources(0, 100, tId);
             setSources(srcData);
-            
+
             const nameMap: Record<string, string> = {};
             srcData.forEach(s => { nameMap[s.id] = s.sourceName; });
-            
+
             const runData = await ingestionRunService.listRuns(0, 50, nameMap, tId);
             setRuns(runData);
         } catch (err) {
@@ -427,7 +414,7 @@ function IngestionRuns(): React.ReactElement {
         } finally {
             setLoading(false);
         }
-    }, [selectedTenantId]);
+    }, [activeTenantId]);
 
     useEffect(() => {
         loadData();
@@ -544,16 +531,10 @@ function IngestionRuns(): React.ReactElement {
                         <input className="ir-search-input" placeholder="Search by run ID, source, entity…" value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} />
                     </div>
                     <div className="ir-filter-row">
-                        {isSuperAdmin && (
-                            <select 
-                                className="ir-select ir-select--tenant" 
-                                value={selectedTenantId} 
-                                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedTenantId(e.target.value)}
-                                style={{ borderColor: "var(--blue-500)", background: "var(--blue-500-10)" }}
-                            >
-                                <option value="ALL">All Tenants</option>
-                                {tenants.map(t => <option key={t.id} value={t.id}>{t.tenantName}</option>)}
-                            </select>
+                        {isSuperAdmin && tenantMode === 'SPECIFIC' && activeTenantName && (
+                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--blue-600)', background: 'var(--blue-100)', padding: '4px 10px', borderRadius: 99, border: '1px solid var(--blue-200)' }}>
+                                🏢 {activeTenantName}
+                            </span>
                         )}
                         <select className="ir-select" value={filterSource} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterSource(e.target.value)}>
                             <option value="ALL">All Sources</option>
@@ -615,11 +596,11 @@ function IngestionRuns(): React.ReactElement {
 
             {/* Start Ingestion Modal */}
             {showModal && (
-                <StartIngestionModal 
-                    onClose={() => setShowModal(false)} 
-                    onStart={handleStart} 
-                    sources={sources} 
-                    tenants={tenants}
+                <StartIngestionModal
+                    onClose={() => setShowModal(false)}
+                    onStart={handleStart}
+                    sources={sources}
+                    tenants={[]}
                     isSuperAdmin={isSuperAdmin}
                 />
             )}

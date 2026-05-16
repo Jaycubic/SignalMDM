@@ -1,4 +1,4 @@
-// Raw Landing — integrated with GET /api/v1/raw-records/ (same patterns as UploadData / IngestionRuns)
+// MDM_Frontend/src/pages/rawlanding/RawLanding.tsx
 import {
     useState,
     useEffect,
@@ -11,10 +11,10 @@ import {
 import '../../styles/theme.css';
 import '../../styles/RawLanding.css';
 
-import { authService } from '../../services/authService';
+
 import { sourceService, ENTITY_TYPES, type SourceRecord } from '../../services/sourceService';
-import { tenantService, type TenantRecord } from '../../services/tenantService';
 import { ingestionRunService, type IngestionRunRecord } from '../../services/ingestionRunService';
+import { useTenantConfig } from '../../context/TenantConfigContext';
 import {
     rawLandingService,
     toRawLandingRecord,
@@ -71,7 +71,7 @@ function PayloadModal({ record, onClose, initialTab = 'payload' }: PayloadModalP
     const [copied, setCopied] = useState(false);
 
     const handleCopy = () => {
-        void navigator.clipboard.writeText(JSON.stringify(record.payload, null, 2)).catch(() => {});
+        void navigator.clipboard.writeText(JSON.stringify(record.payload, null, 2)).catch(() => { });
         setCopied(true);
         setTimeout(() => setCopied(false), 1800);
     };
@@ -186,13 +186,11 @@ function PayloadModal({ record, onClose, initialTab = 'payload' }: PayloadModalP
 }
 
 export default function RawLanding() {
+    const { activeTenantId } = useTenantConfig();
     const [records, setRecords] = useState<RawLandingRecord[]>([]);
     const [totalApi, setTotalApi] = useState(0);
     const [sources, setSources] = useState<SourceRecord[]>([]);
     const [runs, setRuns] = useState<IngestionRunRecord[]>([]);
-    const [tenants, setTenants] = useState<TenantRecord[]>([]);
-    const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-    const [selectedTenantId, setSelectedTenantId] = useState<string>('ALL');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -215,28 +213,12 @@ export default function RawLanding() {
         setLoading(true);
         setError(null);
         try {
-            await authService.init();
-            const adminInfo = authService.getAdminInfoFromCookie();
-            const superAdmin =
-                adminInfo?.tenant_id === 'platform' || adminInfo?.role === 'admin';
-            setIsSuperAdmin(superAdmin);
-            try {
-                const tenantData = await tenantService.listTenants();
-                setTenants(tenantData);
-                if (tenantData.length > 0) setIsSuperAdmin(true);
-            } catch {
-                /* ignore */
-            }
-
-            const tId = selectedTenantId === 'ALL' ? undefined : selectedTenantId;
-            (window as unknown as { activeTenantId?: string }).activeTenantId = tId;
+            const tId = activeTenantId ?? undefined;
 
             const srcData = await sourceService.listSources(0, 100, tId);
             setSources(srcData);
             const nameMap: Record<string, string> = {};
-            srcData.forEach((s) => {
-                nameMap[s.id] = s.sourceName;
-            });
+            srcData.forEach((s) => { nameMap[s.id] = s.sourceName; });
             const runData = await ingestionRunService.listRuns(0, 80, nameMap, tId);
             setRuns(runData);
 
@@ -258,7 +240,7 @@ export default function RawLanding() {
         } finally {
             setLoading(false);
         }
-    }, [selectedTenantId, filterRun, filterSource, debouncedSearch]);
+    }, [activeTenantId, filterRun, filterSource, debouncedSearch]);
 
     useEffect(() => {
         void loadData();
@@ -378,26 +360,6 @@ export default function RawLanding() {
                         />
                     </div>
                     <div className="rl-filter-row">
-                        {isSuperAdmin && tenants.length > 0 && (
-                            <select
-                                className="rl-select"
-                                value={selectedTenantId}
-                                onChange={(e: ChangeEvent<HTMLSelectElement>) => {
-                                    setSelectedTenantId(e.target.value);
-                                    setFilterRun('ALL');
-                                    setFilterSource('ALL');
-                                    setPage(1);
-                                }}
-                                style={{ borderColor: 'var(--blue-500)', background: 'var(--blue-500-10)' }}
-                            >
-                                <option value="ALL">All tenants</option>
-                                {tenants.map((t) => (
-                                    <option key={t.id} value={t.id}>
-                                        {t.tenantName}
-                                    </option>
-                                ))}
-                            </select>
-                        )}
                         <select
                             className="rl-select"
                             value={filterSource}

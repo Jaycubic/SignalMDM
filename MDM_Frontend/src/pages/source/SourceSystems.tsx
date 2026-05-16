@@ -6,6 +6,7 @@ import {
   SOURCE_TYPES,
   type SourceRecord,
 } from '../../services/sourceService';
+import { useTenantConfig } from '../../context/TenantConfigContext';
 
 /* Import both theme and page-specific styles */
 import '../../styles/theme.css';
@@ -40,6 +41,7 @@ function EntityTags({ entities }: { entities: string[] }) {
 
 /* ─── Page ───────────────────────────────────────────────────────────────── */
 export default function SourceSystems() {
+  const { activeTenantId } = useTenantConfig();
   const [sources, setSources] = useState<SourceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +57,8 @@ export default function SourceSystems() {
     setLoading(true);
     setError(null);
     try {
-      const data = await sourceService.listSources();
+      const tId = activeTenantId ?? undefined;
+      const data = await sourceService.listSources(0, 100, tId);
       setSources(data);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load source systems.';
@@ -63,7 +66,7 @@ export default function SourceSystems() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeTenantId]);
 
   useEffect(() => { loadSources(); }, [loadSources]);
 

@@ -65,16 +65,21 @@ pg_restore -U postgres -d SignalMDM "d:\SignalMDM\MDM_DataLayer\SignalMDM.sql"
 psql -U postgres -d SignalMDM -f "d:\SignalMDM\MDM_DataLayer\SignalMDM.sql"
 ```
 
-### 1.4 Setup Platform Administrator
-A dedicated table handles global platform-level access. You **must** run this script to be able to log in:
+### 1.4 Setup Platform Administrator & RBAC
+A dedicated table handles global platform-level access. You **must** run these scripts to be able to log in and manage the platform with Role-Based Access Control:
 
 ```powershell
+# 1. Create the base platform_admin table (if not exists)
 psql -U postgres -d SignalMDM -f "d:\SignalMDM\MDM_Backend\scripts\platform_admin_setup.sql"
+
+# 2. Run the RBAC Migration (Adds roles, permissions, and links them to admins)
+psql -U postgres -d SignalMDM -f "d:\SignalMDM\MDM_Backend\scripts\platform_rbac_migration.sql"
 ```
 
 **Initial Credentials:**
 - **Email:** `admin@signalmdm.com`
 - **Password:** `Admin@Signal123`
+- **Role:** `super_admin` (Assigned automatically during migration)
 
 ### 1.5 Database Tables
 
@@ -112,7 +117,10 @@ The schema creates the following tables:
 **Platform / Security Layer**
 | Table | Purpose |
 |-------|---------|
-| `platform_admin` | Global super-admins (separate from tenant-scoped users) |
+| `platform_admin` | Global platform users (full_name, status, role links) |
+| `platform_role` | Named platform roles (Super Admin, Data Architect, etc.) |
+| `platform_permission` | Granular screen/feature permissions |
+| `platform_role_permission`| Junction table linking roles to permissions |
 
 > **Note:** The 5 ingestion tables are **auto-created** by SQLAlchemy. However, the `platform_admin` table and its seed data must be created manually using the script provided in `MDM_Backend/scripts/`.
 
