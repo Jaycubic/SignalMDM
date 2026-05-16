@@ -11,6 +11,7 @@ import Tenants from './pages/admin/Tenants';
 import SystemHealth from './pages/admin/SystemHealth';
 import ApiLogs from './pages/apilogs/ApiLogs';
 import DevSetup from './pages/DevSetup';
+import PlatformRBAC from './pages/platform/PlatformRBAC';
 import './index.css';
 
 function Placeholder({ title }: { title: string }) {
@@ -52,11 +53,12 @@ export default function App() {
             <Route path="upload"       element={<UploadData />} />
             <Route path="raw-landing"  element={<RawLanding />} />
             <Route path="staging"      element={<StagingRecords />} />
-            <Route path="tenants"      element={<Tenants />} />
-            <Route path="api-logs"     element={<ApiLogs />} />
-            <Route path="system-health" element={<SystemHealth />} />
-            <Route path="dev-setup"    element={<DevSetup />} />
-            <Route path="*"            element={<Navigate to="/" replace />} />
+            <Route path="tenants"        element={<Tenants />} />
+            <Route path="api-logs"       element={<ApiLogs />} />
+            <Route path="system-health"  element={<SystemHealth />} />
+            <Route path="dev-setup"      element={<DevSetup />} />
+            <Route path="platform-rbac" element={<PlatformRBAC />} />
+            <Route path="*"              element={<Navigate to="/" replace />} />
           </Route>
 
           {/* ── Catch-all ── */}

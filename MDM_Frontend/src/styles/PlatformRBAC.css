@@ -1,0 +1,116 @@
+/* ============================================================
+   src/styles/PlatformRBAC.css
+   Platform RBAC Admin screen styles — follows theme.css tokens
+   ============================================================ */
+
+/* ─── Page Layout ─────────────────────────────────────────── */
+.rbac-page { display: flex; flex-direction: column; gap: 24px; padding: 24px; max-width: 1400px; }
+
+.rbac-tabs { display: flex; gap: 4px; background: var(--bg-elevated); border-radius: var(--r-md); padding: 4px; border: 1px solid var(--border-light); align-self: flex-start; }
+.rbac-tab  { padding: 8px 18px; border-radius: var(--r-sm); font-size: 13px; font-weight: 500; color: var(--text-secondary); background: none; border: none; cursor: pointer; transition: all .15s; }
+.rbac-tab--active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-xs); font-weight: 600; }
+.rbac-tab:hover:not(.rbac-tab--active) { background: rgba(255,255,255,.6); color: var(--text-primary); }
+
+/* ─── Section header ──────────────────────────────────────── */
+.rbac-section-hdr { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.rbac-section-hdr h2 { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.rbac-section-hdr p  { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+/* ─── Users grid ──────────────────────────────────────────── */
+.rbac-user-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+
+.rbac-user-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-lg);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-xs);
+  transition: box-shadow .15s, border-color .15s;
+}
+.rbac-user-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-muted); }
+.rbac-user-card--blocked { border-color: rgba(239,68,68,.3); background: rgba(239,68,68,.02); }
+
+.rbac-user-card__top { display: flex; align-items: center; gap: 14px; }
+.rbac-user-avatar {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--blue-600), var(--purple-500));
+  color: #fff;
+  font-size: 16px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.rbac-user-avatar--blocked { background: var(--gray-300); }
+
+.rbac-user-card__info { flex: 1; min-width: 0; }
+.rbac-user-card__name  { font-size: 14px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rbac-user-card__email { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.rbac-user-card__badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.rbac-user-card__footer { display: flex; gap: 6px; flex-wrap: wrap; border-top: 1px solid var(--border-light); padding-top: 12px; }
+.rbac-user-card__footer .btn { flex: 1; justify-content: center; min-width: 0; font-size: 12px; padding: 6px 10px; }
+
+/* ─── Roles panel ─────────────────────────────────────────── */
+.rbac-roles-layout { display: grid; grid-template-columns: 280px 1fr; gap: 20px; }
+@media (max-width: 900px) { .rbac-roles-layout { grid-template-columns: 1fr; } }
+
+.rbac-role-list { display: flex; flex-direction: column; gap: 6px; }
+.rbac-role-item {
+  padding: 12px 16px;
+  border-radius: var(--r-md);
+  border: 1.5px solid var(--border-light);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: all .13s;
+  display: flex; align-items: center; gap: 10px;
+}
+.rbac-role-item:hover { border-color: var(--blue-400); background: var(--blue-100); }
+.rbac-role-item--active { border-color: var(--blue-500); background: var(--blue-100); }
+.rbac-role-item__key   { font-size: 11px; font-weight: 600; color: var(--text-muted); font-family: var(--font-mono); }
+.rbac-role-item__label { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+.rbac-role-item__dot   { width: 8px; height: 8px; border-radius: 50%; background: var(--blue-500); flex-shrink: 0; }
+
+.rbac-perms-panel { background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: var(--r-lg); overflow: hidden; }
+.rbac-perms-panel__hdr { padding: 16px 20px; border-bottom: 1px solid var(--border-light); background: var(--bg-elevated); display: flex; align-items: center; justify-content: space-between; }
+.rbac-perms-panel__title { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.rbac-perms-panel__body  { padding: 16px 20px; display: flex; flex-direction: column; gap: 6px; max-height: 560px; overflow-y: auto; }
+
+.rbac-perm-group { margin-bottom: 10px; }
+.rbac-perm-group__label { font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 6px; padding-left: 4px; }
+
+.rbac-perm-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--bg-elevated);
+  transition: background .12s;
+}
+.rbac-perm-row:hover { background: var(--border-light); }
+.rbac-perm-row input[type=checkbox] { accent-color: var(--blue-500); width: 15px; height: 15px; cursor: pointer; }
+.rbac-perm-row__label { flex: 1; font-size: 13px; color: var(--text-primary); }
+.rbac-perm-row__desc  { font-size: 11px; color: var(--text-muted); }
+
+/* ─── Empty / loading states ──────────────────────────────── */
+.rbac-empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+.rbac-empty__icon { font-size: 40px; margin-bottom: 12px; }
+.rbac-empty__text { font-size: 14px; }
+
+/* ─── Modal adjustments ───────────────────────────────────── */
+.rbac-modal { width: 480px; }
+.rbac-modal .modal-body { display: flex; flex-direction: column; gap: 14px; }
+
+.rbac-input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 600px) { .rbac-input-grid { grid-template-columns: 1fr; } }
+
+.rbac-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg-elevated); border-radius: var(--r-sm); border: 1px solid var(--border-light); }
+.rbac-toggle-row__label { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.rbac-toggle-row__sub   { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+/* ─── Status indicator on top-bar ────────────────────────── */
+.rbac-role-badge { font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 99px; background: var(--purple-100); color: var(--purple-500); text-transform: uppercase; letter-spacing: .5px; }
+
+/* ─── Blocked user overlay ────────────────────────────────── */
+.rbac-blocked-tag { font-size: 11px; font-weight: 700; background: var(--red-100); color: var(--red-600); padding: 2px 8px; border-radius: 99px; }

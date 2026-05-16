@@ -23,13 +23,16 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from signalmdm.database import Base
+
+if TYPE_CHECKING:
+    from signalmdm.models.platform_role import PlatformRole
 
 
 class PlatformAdmin(Base):
@@ -117,6 +120,34 @@ class PlatformAdmin(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+    # ── Platform RBAC ─────────────────────────────────────────
+    role_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("platform_role.role_id", ondelete="SET NULL"),
+        nullable=True,
+        comment="FK to platform_role — determines permissions.",
+    )
+    full_name: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="Full display name."
+    )
+    is_blocked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False,
+        comment="Blocked users cannot log in even with correct credentials."
+    )
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False,
+        comment="Force password reset on next login."
+    )
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("platform_admin.admin_id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Which platform admin created this account."
+    )
+
+    # ── Relationships ──────────────────────────────────────────
+    role: Mapped[Optional["PlatformRole"]] = relationship(back_populates="admins")
 
     def __repr__(self) -> str:
         return (

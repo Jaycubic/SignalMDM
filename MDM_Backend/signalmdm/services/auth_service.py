@@ -373,6 +373,12 @@ def verify_otp(
     if not admin:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin not found.")
 
+    if getattr(admin, 'is_blocked', False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account has been blocked. Contact your administrator.",
+        )
+
     if not _verify_otp_redis(admin_id_str, code):
         _increment_attempt("otp", admin_id_str, MAX_OTP_ATTEMPTS)
         raise HTTPException(

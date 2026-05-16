@@ -40,8 +40,9 @@ from signalmdm.models.raw_record     import RawRecord
 from signalmdm.models.staging_entity import StagingEntity
 
 # ---------------------------------------------------------------------------
-# Auth — Platform Admin
+# Auth — Platform Admin + Platform RBAC
 # ---------------------------------------------------------------------------
+from signalmdm.models.platform_role  import PlatformRole, PlatformPermission, PlatformRolePermission
 from signalmdm.models.platform_admin import PlatformAdmin
 
 __all__ = [
@@ -71,4 +72,7 @@ __all__ = [
     "StagingEntity",
     # Auth
     "PlatformAdmin",
+    "PlatformRole",
+    "PlatformPermission",
+    "PlatformRolePermission",
 ]

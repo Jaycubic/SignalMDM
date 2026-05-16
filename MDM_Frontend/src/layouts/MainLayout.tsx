@@ -35,7 +35,8 @@ const NAV: NavGroup[] = [
   {
     group: 'Platform',
     items: [
-      { label: 'Tenants', path: '/tenants', icon: '🏢', roles: ['admin'] },
+      { label: 'Tenants',        path: '/tenants',        icon: '🏢', roles: ['admin'] },
+      { label: 'Platform Users', path: '/platform-rbac',  icon: '👥', roles: ['admin'] },
     ],
   },
 ];
